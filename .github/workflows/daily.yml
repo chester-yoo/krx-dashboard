@@ -30,6 +30,11 @@ jobs:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
         run: python financials.py update --years 3
 
+      - name: Update major disclosures (OpenDART)
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        run: python disclosures.py update
+
       - name: Commit and push if changed
         run: |
           git config user.name "github-actions[bot]"
