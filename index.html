@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>상장사 시가총액 Dashboard</title>
+<style>
+  :root{
+    --bg:#f5f6f4; --panel:#ffffff; --ink:#161c26; --ink-soft:#5b6472; --ink-mute:#8b93a0;
+    --line:#e3e5e1; --line-strong:#c9cdc6;
+    --navy:#1f2b3d; --navy-soft:#3a4a63;
+    --safe-bg:#e8f2e4; --safe-fg:#2f6b1f; --safe-bd:#bcdcae;
+    --watch-bg:#fdf1de; --watch-fg:#8a5a06; --watch-bd:#f2d49b;
+    --danger-bg:#fbe7e3; --danger-fg:#a3311f; --danger-bd:#f0bcaf;
+    --crit-bg:#7a2115; --crit-fg:#ffffff; --crit-bd:#7a2115;
+    --mono: 'SFMono-Regular', ui-monospace, 'Roboto Mono', Consolas, monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Pretendard,sans-serif;font-size:14px;line-height:1.5;}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px 20px 56px;}
+  header{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:18px;border-bottom:2px solid var(--navy);padding-bottom:14px;}
+  .titleblock h1{font-size:19px;font-weight:700;margin:0 0 4px;color:var(--navy);}
+  .titleblock p{margin:0;color:var(--ink-soft);font-size:12px;}
+  .asof{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--ink);text-align:right;white-space:nowrap;}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px 18px;margin-bottom:16px;}
+  .panel h2{font-size:12.5px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);margin:0 0 10px;font-weight:700;}
+  .controls-row{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;}
+  .field{display:flex;flex-direction:column;gap:4px;}
+  .field label{font-size:11.5px;color:var(--ink-soft);font-weight:600;}
+  .field input{padding:6px 8px;border:1px solid var(--line-strong);border-radius:4px;font-family:var(--mono);font-size:13px;width:90px;}
+  .field input[type=text]{width:180px;font-family:inherit;}
+  button{cursor:pointer;border:1px solid var(--navy);background:var(--navy);color:#fff;padding:7px 14px;border-radius:4px;font-size:12.5px;font-weight:600;}
+  button:hover{opacity:0.9;}
+  button.secondary{background:#fff;color:var(--navy);}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px;}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px;}
+  .stat .num{font-family:var(--mono);font-size:24px;font-weight:700;color:var(--navy);}
+  .stat .lbl{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .stat.crit .num{color:var(--danger-fg);} .stat.warn .num{color:var(--watch-fg);}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{position:sticky;top:0;background:var(--navy);color:#fff;text-align:left;padding:8px 9px;font-size:11px;text-transform:uppercase;font-weight:600;cursor:pointer;white-space:nowrap;}
+  tbody td{padding:7px 9px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  tbody tr:hover{background:#f5f6f4;cursor:pointer;}
+  tbody tr.selected{background:#eef2fa;}
+  td.num, th.num{font-family:var(--mono);text-align:right;}
+  .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid;}
+  .b-safe{background:var(--safe-bg);color:var(--safe-fg);border-color:var(--safe-bd);}
+  .b-watch{background:var(--watch-bg);color:var(--watch-fg);border-color:var(--watch-bd);}
+  .b-danger{background:var(--danger-bg);color:var(--danger-fg);border-color:var(--danger-bd);}
+  .b-crit{background:var(--crit-bg);color:var(--crit-fg);border-color:var(--crit-bd);}
+  .b-halt{background:#e5e7eb;color:#374151;border-color:#c7cbd3;margin-left:4px;}
+  .mkt-pill{font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;border:1px solid;}
+  .mkt-pill.kospi{background:#e8edf5;color:#1f4b8f;border-color:#b9c9e6;}
+  .mkt-pill.kosdaq{background:#fdf6d9;color:#8a6d00;border-color:#eadd9a;}
+  .tablewrap{max-height:480px;overflow:auto;border:1px solid var(--line);border-radius:6px;}
+  .empty{padding:36px 20px;text-align:center;color:var(--ink-mute);}
+  #detail{display:none;} #detail.open{display:block;}
+  .detail-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  .close-btn{background:none;border:none;color:var(--ink-mute);padding:4px 8px;}
+  .legend{display:flex;gap:14px;font-size:11px;color:var(--ink-soft);margin-top:8px;}
+  .legend span{display:inline-flex;align-items:center;gap:5px;} .legend i{width:10px;height:10px;border-radius:2px;display:inline-block;}
+  .note{font-size:11.5px;color:var(--ink-mute);margin-top:4px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="titleblock">
+      <h1>상장사 시가총액 Dashboard</h1>
+    </div>
+    <div class="asof" id="asofLabel">로딩중...</div>
+  </header>
+
+  <div class="panel">
+    <h2>검색</h2>
+    <div class="controls-row">
+      <div class="field"><label>종목명/코드 검색</label><input type="text" id="searchBox" placeholder="예: 삼성전자, 005930"></div>
+      <div class="field"><label>관리종목 지정 기준일수</label><input type="number" id="thDays" value="0"></div>
+      <button id="searchBtn">검색</button>
+      <button class="secondary" id="resetBtn">새로고침</button>
+    </div>
+    <div class="note">관리종목 지정 기준: 코스피 300억/코스닥 200억, 30거래일 연속 미달.</div>
+  </div>
+
+  <div class="stats" id="statsRow" style="display:none;"></div>
+
+  <div class="panel" id="detail">
+    <div class="detail-head">
+      <div><h3 id="detailName" style="margin:0;font-size:15px;">-</h3><div id="detailSub" style="color:var(--ink-soft);font-size:12px;font-family:var(--mono);">-</div></div>
+      <button class="close-btn" id="closeDetail">닫기 ✕</button>
+    </div>
+    <div style="position:relative;height:240px;"><canvas id="trendChart"></canvas></div>
+    <div class="legend"><span><i style="background:#1f2b3d;"></i>시가총액(억원)</span><span><i style="background:#c0392b;"></i>기준선</span></div>
+  </div>
+
+  <div class="panel" id="tablePanel" style="display:none;">
+    <h2>종목별 현황 (클릭 시 추이 확인)</h2>
+    <div class="tablewrap">
+      <table id="stockTable">
+        <thead><tr>
+          <th data-key="market">시장</th><th data-key="name">종목명</th><th data-key="code">종목코드</th>
+          <th data-key="industry">산업</th>
+          <th class="num" data-key="market_cap_eok">시가총액(억원)</th>
+          <th class="num" data-key="streak">연속미달</th><th data-key="statusRank">상태</th>
+        </tr></thead>
+        <tbody id="stockBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel empty" id="emptyState">데이터를 불러오는 중입니다...</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const DATA_URL = 'data/history.json';
+const INDUSTRY_URL = 'data/industry.json';
+const AUTO_REFRESH_MS = 30 * 60 * 1000; // 30분마다 자동 새로고침 (수집은 매일 오전 9시 실행)
+
+// 관리종목 지정 기준 (2026.7 시행 상장폐지 개혁방안) - 고정값, 변경 불가.
+// "상태" 배지는 항상 이 기준으로만 판정한다.
+const OFFICIAL_THRESHOLDS = { KOSPI: 300, KOSDAQ: 200 };
+const OFFICIAL_STREAK_LIMIT = 30;
+
+let records = [];
+let industryMap = {};
+let bySymbol = {};
+let sortKey = 'streak', sortDir = -1, selectedCode = null, chartObj = null;
+
+function formatDate(yyyymmdd){
+  if(!yyyymmdd || yyyymmdd.length !== 8) return yyyymmdd;
+  return yyyymmdd.slice(0,4) + '-' + yyyymmdd.slice(4,6) + '-' + yyyymmdd.slice(6,8);
+}
+
+function getStreakLimit(){
+  const n = Number(document.getElementById('thDays').value);
+  return Number.isNaN(n) || n < 0 ? 0 : n;
+}
+
+function computeStreak(history, threshold){
+  let streak = 0;
+  for(let i=history.length-1;i>=0;i--){ if(history[i].market_cap_eok < threshold) streak++; else break; }
+  return streak;
+}
+
+function rebuild(){
+  bySymbol = {};
+  records.forEach(r=>{
+    if(!bySymbol[r.code]) bySymbol[r.code] = {code:r.code, name:r.name, market:r.market, industry:industryMap[r.code]||'', history:[]};
+    bySymbol[r.code].history.push(r);
+  });
+  const list = Object.values(bySymbol);
+  list.forEach(s=>{
+    s.history.sort((a,b)=> a.date.localeCompare(b.date));
+    s.latest = s.history[s.history.length-1];
+
+    // 상태 판정: 코스피 300억/코스닥 200억/30일 고정 기준 (필터 입력값과 무관)
+    const officialThreshold = OFFICIAL_THRESHOLDS[s.market] ?? OFFICIAL_THRESHOLDS.KOSPI;
+    s.threshold = officialThreshold;
+    const streak = computeStreak(s.history, officialThreshold);
+    s.streak = streak;
+    s.pctOfThreshold = officialThreshold>0 ? ((s.latest.market_cap_eok/officialThreshold - 1)*100) : 0;
+    const dangerDays = Math.ceil(OFFICIAL_STREAK_LIMIT*0.66);
+    if(streak >= OFFICIAL_STREAK_LIMIT){ s.status='crit'; s.statusLabel='관리종목 지정 대상'; s.statusRank=3; }
+    else if(streak >= dangerDays){ s.status='danger'; s.statusLabel=`지정임박(${dangerDays}일 이상)`; s.statusRank=2; }
+    else if(streak >= 1){ s.status='watch'; s.statusLabel='미달 주의'; s.statusRank=1; }
+    else { s.status='safe'; s.statusLabel='기준 충족'; s.statusRank=0; }
+  });
+  renderStats(list);
+  renderTable(list);
+  const dates = records.map(r=>r.date).sort();
+  document.getElementById('asofLabel').textContent = dates.length ? ('최신: '+formatDate(dates[dates.length-1])+' · '+[...new Set(dates)].length+' 거래일(누적)') : '데이터 없음';
+  document.getElementById('emptyState').style.display = list.length ? 'none':'block';
+  document.getElementById('statsRow').style.display = list.length ? 'grid':'none';
+  document.getElementById('tablePanel').style.display = list.length ? 'block':'none';
+}
+
+function renderStats(list, streakLimit){
+  const kospiBelow = list.filter(s=>s.market==='KOSPI' && s.streak>0).length;
+  const kosdaqBelow = list.filter(s=>s.market==='KOSDAQ' && s.streak>0).length;
+  const critCount = list.filter(s=>s.status==='crit').length;
+  const dangerCount = list.filter(s=>s.status==='danger').length;
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat"><div class="num">${list.length}</div><div class="lbl">전체 추적 종목</div></div>
+    <div class="stat warn"><div class="num">${kospiBelow}</div><div class="lbl">코스피 기준 미달</div></div>
+    <div class="stat warn"><div class="num">${kosdaqBelow}</div><div class="lbl">코스닥 기준 미달</div></div>
+    <div class="stat crit"><div class="num">${critCount}</div><div class="lbl">관리종목 지정 대상</div></div>
+    <div class="stat"><div class="num">${dangerCount}</div><div class="lbl">지정 임박</div></div>`;
+}
+
+function badgeHtml(s){
+  const cls={watch:'b-watch',danger:'b-danger',crit:'b-crit'}[s.status];
+  const statusBadge = s.status==='safe' ? '' : `<span class="badge ${cls}">${s.statusLabel}</span>`;
+  const haltBadge = s.latest && s.latest.halted ? `<span class="badge b-halt">거래정지</span>` : '';
+  return statusBadge + haltBadge;
+}
+
+function renderTable(list){
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  const streakLimit = getStreakLimit();
+  let filtered = list.filter(s => s.streak >= streakLimit);
+  filtered = filtered.filter(s => !q || s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q));
+  filtered.sort((a,b)=>{
+    let av=a[sortKey], bv=b[sortKey];
+    if(sortKey==='market_cap_eok'){ av=a.latest.market_cap_eok; bv=b.latest.market_cap_eok; }
+    if(av<bv) return -1*sortDir; if(av>bv) return 1*sortDir; return 0;
+  });
+  document.getElementById('stockBody').innerHTML = filtered.map(s=>`
+    <tr data-code="${s.code}" class="${s.code===selectedCode?'selected':''}">
+      <td><span class="mkt-pill ${s.market.toLowerCase()}">${s.market}</span></td><td>${s.name}</td><td class="num">${s.code}</td>
+      <td>${s.industry || '-'}</td>
+      <td class="num">${Math.round(s.latest.market_cap_eok).toLocaleString()}</td>
+      <td class="num">${s.streak}</td><td>${badgeHtml(s)}</td>
+    </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--ink-mute);">결과 없음</td></tr>';
+  document.querySelectorAll('#stockBody tr[data-code]').forEach(tr=> tr.addEventListener('click', ()=> openDetail(tr.getAttribute('data-code'))));
+}
+
+function openDetail(code){
+  selectedCode = code; const s = bySymbol[code]; if(!s) return;
+  document.getElementById('detail').classList.add('open');
+  document.getElementById('detailName').textContent = `${s.name} (${s.code})`;
+  document.getElementById('detailSub').textContent = `${s.market}${s.industry ? ' · '+s.industry : ''} · 기준 ${s.threshold.toLocaleString()}억원 · 연속미달 ${s.streak}거래일`;
+  const labels = s.history.map(h=>h.date), data = s.history.map(h=>h.market_cap_eok), th = s.history.map(()=>s.threshold);
+  if(chartObj) chartObj.destroy();
+  chartObj = new Chart(document.getElementById('trendChart'), {
+    type:'line',
+    data:{ labels, datasets:[
+      {label:'시가총액', data, borderColor:'#1f2b3d', backgroundColor:'rgba(31,43,61,0.08)', fill:true, borderWidth:2, pointRadius: labels.length>60?0:2, tension:0.15},
+      {label:'기준선', data:th, borderColor:'#c0392b', borderWidth:1.5, borderDash:[6,4], pointRadius:0, fill:false}
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>c.dataset.label+': '+Number(c.parsed.y).toLocaleString()+'억원'}}},
+      scales:{ x:{ticks:{maxTicksLimit:10,font:{size:10}},grid:{display:false}}, y:{ticks:{font:{size:10}},grid:{color:'#e3e5e1'}} } }
+  });
+  renderTable(Object.values(bySymbol));
+}
+
+document.getElementById('closeDetail').addEventListener('click', ()=>{ document.getElementById('detail').classList.remove('open'); selectedCode=null; renderTable(Object.values(bySymbol)); });
+document.querySelectorAll('#stockTable thead th').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const key = th.getAttribute('data-key');
+    if(sortKey===key) sortDir*=-1; else { sortKey=key; sortDir = ['name','market','code'].includes(key)?1:-1; }
+    renderTable(Object.values(bySymbol));
+  });
+});
+document.getElementById('searchBox').addEventListener('input', ()=> renderTable(Object.values(bySymbol)));
+document.getElementById('thDays').addEventListener('change', ()=> renderTable(Object.values(bySymbol)));
+
+function loadData(){
+  document.getElementById('asofLabel').textContent = '불러오는 중...';
+  Promise.all([
+    fetch(DATA_URL + '?t=' + Date.now()).then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+    fetch(INDUSTRY_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+  ])
+    .then(([data, industry]) => { records = data; industryMap = industry; rebuild(); })
+    .catch(err => {
+      document.getElementById('emptyState').textContent = '데이터 로드 실패: ' + err.message + ' (collect.py를 먼저 실행했는지 확인하세요)';
+      document.getElementById('emptyState').style.display = 'block';
+      document.getElementById('asofLabel').textContent = '로드 실패';
+    });
+}
+
+document.getElementById('searchBtn').addEventListener('click', loadData);
+document.getElementById('resetBtn').addEventListener('click', () => {
+  document.getElementById('searchBox').value = '';
+  document.getElementById('thDays').value = '0';
+  loadData();
+});
+loadData();
+setInterval(loadData, AUTO_REFRESH_MS);
+</script>
+</body>
+</html>
