@@ -207,17 +207,18 @@ function rebuild(){
   document.getElementById('tablePanel').style.display = list.length ? 'block':'none';
 }
 
-function renderStats(list, streakLimit){
+function renderStats(list){
   const kospiBelow = list.filter(s=>s.market==='KOSPI' && s.streak>0).length;
   const kosdaqBelow = list.filter(s=>s.market==='KOSDAQ' && s.streak>0).length;
   const critCount = list.filter(s=>s.status==='crit').length;
   const dangerCount = list.filter(s=>s.status==='danger').length;
+  const dangerDays = Math.ceil(OFFICIAL_STREAK_LIMIT*0.66);
   document.getElementById('statsRow').innerHTML = `
     <div class="stat"><div class="num">${list.length}</div><div class="lbl">전체 추적 종목</div></div>
     <div class="stat warn"><div class="num">${kospiBelow}</div><div class="lbl">코스피 기준 미달</div></div>
     <div class="stat warn"><div class="num">${kosdaqBelow}</div><div class="lbl">코스닥 기준 미달</div></div>
     <div class="stat crit"><div class="num">${critCount}</div><div class="lbl">관리종목 지정 대상</div></div>
-    <div class="stat"><div class="num">${dangerCount}</div><div class="lbl">지정 임박</div></div>`;
+    <div class="stat"><div class="num">${dangerCount}</div><div class="lbl">지정 임박(${dangerDays}일 이상)</div></div>`;
 }
 
 function badgeHtml(s){
