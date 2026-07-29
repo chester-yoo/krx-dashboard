@@ -41,7 +41,7 @@
   .stat .lbl{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
   .stat.crit .num{color:var(--danger-fg);} .stat.warn .num{color:var(--watch-fg);}
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  thead th{position:sticky;top:0;background:var(--navy);color:#fff;text-align:left;padding:8px 9px;font-size:11px;text-transform:uppercase;font-weight:600;cursor:pointer;white-space:nowrap;}
+  thead th{position:sticky;top:0;background:var(--navy);color:#fff;text-align:center;padding:8px 9px;font-size:11px;text-transform:uppercase;font-weight:600;cursor:pointer;white-space:nowrap;}
   tbody td{padding:7px 9px;border-bottom:1px solid var(--line);white-space:nowrap;}
   tbody tr:hover{background:#f5f6f4;cursor:pointer;}
   tbody tr.selected{background:#eef2fa;}
@@ -193,7 +193,7 @@ function rebuild(){
     s.pctOfThreshold = officialThreshold>0 ? ((s.latest.market_cap_eok/officialThreshold - 1)*100) : 0;
     const dangerDays = Math.ceil(OFFICIAL_STREAK_LIMIT*0.66);
     if(streak >= OFFICIAL_STREAK_LIMIT){ s.status='crit'; s.statusLabel='관리종목 지정 대상'; s.statusRank=3; }
-    else if(streak >= dangerDays){ s.status='danger'; s.statusLabel=`지정임박(${dangerDays}일 이상)`; s.statusRank=2; }
+    else if(streak >= dangerDays){ s.status='danger'; s.statusLabel=`지정 임박(연속${dangerDays}일)`; s.statusRank=2; }
     else if(streak >= 1){ s.status='watch'; s.statusLabel='미달 주의'; s.statusRank=1; }
     else { s.status='safe'; s.statusLabel='기준 충족'; s.statusRank=0; }
   });
