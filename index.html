@@ -111,6 +111,7 @@
     </div>
     <div style="position:relative;height:240px;"><canvas id="trendChart"></canvas></div>
     <div class="legend"><span><i style="background:#1f2b3d;"></i>시가총액(억원)</span><span><i style="background:#c0392b;"></i>기준선</span></div>
+    <div id="financialsPanel"></div>
   </div>
 
   <div class="panel" id="tablePanel" style="display:none;">
@@ -135,6 +136,7 @@
 <script>
 const DATA_URL = 'data/history.json';
 const INDUSTRY_URL = 'data/industry.json';
+const FINANCIALS_URL = 'data/financials.json';
 const AUTO_REFRESH_MS = 30 * 60 * 1000; // 30분마다 자동 새로고침 (수집은 매일 오전 9시 실행)
 
 // 관리종목 지정 기준 (2026.7 시행 상장폐지 개혁방안) - 고정값, 변경 불가.
@@ -144,6 +146,7 @@ const OFFICIAL_STREAK_LIMIT = 30;
 
 let records = [];
 let industryMap = {};
+let financialsMap = {};
 let bySymbol = {};
 let sortKey = 'streak', sortDir = -1, selectedCode = null, chartObj = null;
 
@@ -255,6 +258,39 @@ function renderTable(list){
   document.querySelectorAll('#stockBody tr[data-code]').forEach(tr=> tr.addEventListener('click', ()=> openDetail(tr.getAttribute('data-code'))));
 }
 
+function eokFromWon(won){ return won==null ? null : Math.round(won/100000000); }
+
+function renderFinancials(code){
+  const panel = document.getElementById('financialsPanel');
+  const data = financialsMap[code];
+  if(!data || !Object.keys(data).length){
+    panel.innerHTML = '<div class="note" style="margin-top:12px;">재무정보 없음 (DART 공시 미확인 종목이거나 아직 수집되지 않음)</div>';
+    return;
+  }
+  const years = Object.keys(data).sort((a,b)=>b.localeCompare(a));
+  const rows = [
+    ['매출액', 'revenue'], ['영업이익', 'operating_profit'], ['당기순이익', 'net_income'],
+  ];
+  const fsLabel = years.map(y=>data[y].fs_div==='CFS'?'연결':'별도').join('/');
+  panel.innerHTML = `
+    <h2 style="margin-top:16px;">연도별 재무정보 (억원, ${fsLabel})</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+      <thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--line-strong);"></th>
+        ${years.map(y=>`<th class="num" style="padding:6px 8px;border-bottom:2px solid var(--line-strong);">${y}</th>`).join('')}
+      </tr></thead>
+      <tbody>
+        ${rows.map(([label,key])=>`
+          <tr><td style="padding:5px 8px;color:var(--ink-soft);">${label}</td>
+            ${years.map(y=>{
+              const v = eokFromWon(data[y][key]);
+              return `<td class="num" style="padding:5px 8px;${v<0?'color:#a3311f;':''}">${v==null?'-':v.toLocaleString()}</td>`;
+            }).join('')}
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="note">출처: OpenDART 사업보고서 주요계정 (연결 우선, 없으면 별도)</div>`;
+}
+
 function openDetail(code){
   selectedCode = code; const s = bySymbol[code]; if(!s) return;
   document.getElementById('detail').classList.add('open');
@@ -272,6 +308,7 @@ function openDetail(code){
       plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>c.dataset.label+': '+Number(c.parsed.y).toLocaleString()+'억원'}}},
       scales:{ x:{ticks:{maxTicksLimit:10,font:{size:10}},grid:{display:false}}, y:{ticks:{font:{size:10}},grid:{color:'#e3e5e1'}} } }
   });
+  renderFinancials(code);
   renderTable(Object.values(bySymbol));
 }
 
@@ -293,8 +330,9 @@ function loadData(){
   Promise.all([
     fetch(DATA_URL + '?t=' + Date.now()).then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
     fetch(INDUSTRY_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+    fetch(FINANCIALS_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : {}).catch(() => ({})),
   ])
-    .then(([data, industry]) => { records = data; industryMap = industry; rebuild(); })
+    .then(([data, industry, financials]) => { records = data; industryMap = industry; financialsMap = financials; rebuild(); })
     .catch(err => {
       document.getElementById('emptyState').textContent = '데이터 로드 실패: ' + err.message + ' (collect.py를 먼저 실행했는지 확인하세요)';
       document.getElementById('emptyState').style.display = 'block';

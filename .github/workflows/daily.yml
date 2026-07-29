@@ -25,6 +25,11 @@ jobs:
           KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
         run: python collect.py daily
 
+      - name: Update financial statements (OpenDART)
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        run: python financials.py update --years 3
+
       - name: Commit and push if changed
         run: |
           git config user.name "github-actions[bot]"
