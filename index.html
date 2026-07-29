@@ -29,8 +29,9 @@
   .controls-row{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;}
   .field{display:flex;flex-direction:column;gap:4px;}
   .field label{font-size:11.5px;color:var(--ink-soft);font-weight:600;}
-  .field input{padding:6px 8px;border:1px solid var(--line-strong);border-radius:4px;font-family:var(--mono);font-size:13px;width:90px;}
+  .field input, .field select{padding:6px 8px;border:1px solid var(--line-strong);border-radius:4px;font-family:var(--mono);font-size:13px;width:90px;}
   .field input[type=text]{width:180px;font-family:inherit;}
+  .field select{width:140px;font-family:inherit;background:#fff;}
   button{cursor:pointer;border:1px solid var(--navy);background:var(--navy);color:#fff;padding:7px 14px;border-radius:4px;font-size:12.5px;font-weight:600;}
   button:hover{opacity:0.9;}
   button.secondary{background:#fff;color:var(--navy);}
@@ -78,6 +79,23 @@
     <div class="controls-row">
       <div class="field"><label>종목명/코드 검색</label><input type="text" id="searchBox" placeholder="예: 삼성전자, 005930"></div>
       <div class="field"><label>관리종목 지정 기준일수</label><input type="number" id="thDays" value="0"></div>
+      <div class="field"><label>시장</label>
+        <select id="marketFilter"><option value="">전체</option><option value="KOSPI">KOSPI</option><option value="KOSDAQ">KOSDAQ</option></select>
+      </div>
+      <div class="field"><label>산업</label>
+        <select id="industryFilter"><option value="">전체</option></select>
+      </div>
+      <div class="field"><label>시가총액 최소(억원)</label><input type="number" id="capMin" placeholder="예: 100"></div>
+      <div class="field"><label>시가총액 최대(억원)</label><input type="number" id="capMax" placeholder="예: 500"></div>
+      <div class="field"><label>상태</label>
+        <select id="statusFilter">
+          <option value="">전체</option>
+          <option value="safe">기준 충족</option>
+          <option value="watch">미달 주의</option>
+          <option value="danger">지정임박</option>
+          <option value="crit">관리종목 지정 대상</option>
+        </select>
+      </div>
       <button id="searchBtn">검색</button>
       <button class="secondary" id="resetBtn">새로고침</button>
     </div>
@@ -145,6 +163,14 @@ function computeStreak(history, threshold){
   return streak;
 }
 
+function populateIndustryOptions(list){
+  const sel = document.getElementById('industryFilter');
+  const current = sel.value;
+  const industries = [...new Set(list.map(s=>s.industry).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">전체</option>' + industries.map(i=>`<option value="${i}">${i}</option>`).join('');
+  if(industries.includes(current)) sel.value = current;
+}
+
 function rebuild(){
   bySymbol = {};
   records.forEach(r=>{
@@ -168,6 +194,7 @@ function rebuild(){
     else if(streak >= 1){ s.status='watch'; s.statusLabel='미달 주의'; s.statusRank=1; }
     else { s.status='safe'; s.statusLabel='기준 충족'; s.statusRank=0; }
   });
+  populateIndustryOptions(list);
   renderStats(list);
   renderTable(list);
   const dates = records.map(r=>r.date).sort();
@@ -200,8 +227,19 @@ function badgeHtml(s){
 function renderTable(list){
   const q = document.getElementById('searchBox').value.trim().toLowerCase();
   const streakLimit = getStreakLimit();
+  const marketFilter = document.getElementById('marketFilter').value;
+  const industryFilter = document.getElementById('industryFilter').value;
+  const statusFilter = document.getElementById('statusFilter').value;
+  const capMin = document.getElementById('capMin').value.trim();
+  const capMax = document.getElementById('capMax').value.trim();
+
   let filtered = list.filter(s => s.streak >= streakLimit);
   filtered = filtered.filter(s => !q || s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q));
+  filtered = filtered.filter(s => !marketFilter || s.market === marketFilter);
+  filtered = filtered.filter(s => !industryFilter || s.industry === industryFilter);
+  filtered = filtered.filter(s => !statusFilter || s.status === statusFilter);
+  filtered = filtered.filter(s => capMin === '' || s.latest.market_cap_eok >= Number(capMin));
+  filtered = filtered.filter(s => capMax === '' || s.latest.market_cap_eok <= Number(capMax));
   filtered.sort((a,b)=>{
     let av=a[sortKey], bv=b[sortKey];
     if(sortKey==='market_cap_eok'){ av=a.latest.market_cap_eok; bv=b.latest.market_cap_eok; }
@@ -246,7 +284,9 @@ document.querySelectorAll('#stockTable thead th').forEach(th=>{
   });
 });
 document.getElementById('searchBox').addEventListener('input', ()=> renderTable(Object.values(bySymbol)));
-document.getElementById('thDays').addEventListener('change', ()=> renderTable(Object.values(bySymbol)));
+['thDays','marketFilter','industryFilter','statusFilter','capMin','capMax'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', ()=> renderTable(Object.values(bySymbol)));
+});
 
 function loadData(){
   document.getElementById('asofLabel').textContent = '불러오는 중...';
@@ -266,6 +306,11 @@ document.getElementById('searchBtn').addEventListener('click', loadData);
 document.getElementById('resetBtn').addEventListener('click', () => {
   document.getElementById('searchBox').value = '';
   document.getElementById('thDays').value = '0';
+  document.getElementById('marketFilter').value = '';
+  document.getElementById('industryFilter').value = '';
+  document.getElementById('statusFilter').value = '';
+  document.getElementById('capMin').value = '';
+  document.getElementById('capMax').value = '';
   loadData();
 });
 loadData();
