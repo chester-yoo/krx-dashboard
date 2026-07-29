@@ -99,7 +99,7 @@
       <button id="searchBtn">검색</button>
       <button class="secondary" id="resetBtn">새로고침</button>
     </div>
-    <div class="note">관리종목 지정 기준: 코스피 300억/코스닥 200억, 30거래일 연속 미달.</div>
+    <div class="note">관리종목 지정 기준: 코스피 300억/코스닥 200억, 30거래일 연속 미달. 관리종목 지정 후 90거래일 내 45거래일 연속 시가총액 미회복시 상장폐지.</div>
   </div>
 
   <div class="stats" id="statsRow" style="display:none;"></div>
@@ -214,11 +214,11 @@ function renderStats(list){
   const dangerCount = list.filter(s=>s.status==='danger').length;
   const dangerDays = Math.ceil(OFFICIAL_STREAK_LIMIT*0.66);
   document.getElementById('statsRow').innerHTML = `
-    <div class="stat"><div class="num">${list.length}</div><div class="lbl">전체 추적 종목</div></div>
-    <div class="stat warn"><div class="num">${kospiBelow}</div><div class="lbl">코스피 기준 미달</div></div>
-    <div class="stat warn"><div class="num">${kosdaqBelow}</div><div class="lbl">코스닥 기준 미달</div></div>
-    <div class="stat crit"><div class="num">${critCount}</div><div class="lbl">관리종목 지정 대상</div></div>
-    <div class="stat"><div class="num">${dangerCount}</div><div class="lbl">지정 임박(${dangerDays}일 이상)</div></div>`;
+    <div class="stat"><div class="num">${list.length.toLocaleString()}</div><div class="lbl">전체 추적 종목</div></div>
+    <div class="stat warn"><div class="num">${kospiBelow.toLocaleString()}</div><div class="lbl">코스피 기준 미달</div></div>
+    <div class="stat warn"><div class="num">${kosdaqBelow.toLocaleString()}</div><div class="lbl">코스닥 기준 미달</div></div>
+    <div class="stat crit"><div class="num">${critCount.toLocaleString()}</div><div class="lbl">관리종목 지정 대상</div></div>
+    <div class="stat"><div class="num">${dangerCount.toLocaleString()}</div><div class="lbl">지정 임박(${dangerDays}일 이상)</div></div>`;
 }
 
 function badgeHtml(s){
