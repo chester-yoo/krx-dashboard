@@ -260,6 +260,11 @@ function renderTable(list){
 
 function eokFromWon(won){ return won==null ? null : Math.round(won/100000000); }
 
+function pctOf(numerator, denominator){
+  if(numerator==null || denominator==null || denominator===0) return null;
+  return Math.round((numerator/denominator)*1000)/10; // 소수 1자리
+}
+
 function renderFinancials(code){
   const panel = document.getElementById('financialsPanel');
   const data = financialsMap[code];
@@ -267,9 +272,17 @@ function renderFinancials(code){
     panel.innerHTML = '<div class="note" style="margin-top:12px;">재무정보 없음 (DART 공시 미확인 종목이거나 아직 수집되지 않음)</div>';
     return;
   }
-  const years = Object.keys(data).sort((a,b)=>b.localeCompare(a));
+  const years = Object.keys(data).sort((a,b)=>b.localeCompare(a)).slice(0,3);
   const rows = [
-    ['매출액', 'revenue'], ['영업이익', 'operating_profit'], ['당기순이익', 'net_income'],
+    { label:'매출액', unit:'eok', calc:d=>eokFromWon(d.revenue) },
+    { label:'영업이익', unit:'eok', calc:d=>eokFromWon(d.operating_profit) },
+    { label:'영업이익률', unit:'pct', calc:d=>pctOf(d.operating_profit, d.revenue) },
+    { label:'당기순이익', unit:'eok', calc:d=>eokFromWon(d.net_income) },
+    { label:'당기순이익률', unit:'pct', calc:d=>pctOf(d.net_income, d.revenue) },
+    { label:'자산총계', unit:'eok', calc:d=>eokFromWon(d.assets) },
+    { label:'부채총계', unit:'eok', calc:d=>eokFromWon(d.liabilities) },
+    { label:'자본총계', unit:'eok', calc:d=>eokFromWon(d.equity) },
+    { label:'부채비율', unit:'pct', calc:d=>pctOf(d.liabilities, d.equity) },
   ];
   const fsLabel = years.map(y=>data[y].fs_div==='CFS'?'연결':'별도').join('/');
   panel.innerHTML = `
@@ -279,16 +292,17 @@ function renderFinancials(code){
         ${years.map(y=>`<th class="num" style="padding:6px 8px;border-bottom:2px solid var(--line-strong);">${y}</th>`).join('')}
       </tr></thead>
       <tbody>
-        ${rows.map(([label,key])=>`
-          <tr><td style="padding:5px 8px;color:var(--ink-soft);">${label}</td>
+        ${rows.map(row=>`
+          <tr><td style="padding:5px 8px;color:var(--ink-soft);">${row.label}</td>
             ${years.map(y=>{
-              const v = eokFromWon(data[y][key]);
-              return `<td class="num" style="padding:5px 8px;${v<0?'color:#a3311f;':''}">${v==null?'-':v.toLocaleString()}</td>`;
+              const v = row.calc(data[y] || {});
+              const text = v==null ? '-' : (row.unit==='pct' ? v.toFixed(1)+'%' : v.toLocaleString());
+              return `<td class="num" style="padding:5px 8px;${v<0?'color:#a3311f;':''}">${text}</td>`;
             }).join('')}
           </tr>`).join('')}
       </tbody>
     </table>
-    <div class="note">출처: OpenDART 사업보고서 주요계정 (연결 우선, 없으면 별도)</div>`;
+    <div class="note">출처: OpenDART 사업보고서 주요계정 (연결 우선, 없으면 별도) · 영업이익률=영업이익/매출액, 당기순이익률=당기순이익/매출액, 부채비율=부채총계/자본총계</div>`;
 }
 
 function openDetail(code){
