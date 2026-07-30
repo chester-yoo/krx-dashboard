@@ -29,7 +29,8 @@ LOOKBACK_DAYS = 365 * 3  # 최근 3년 내에서 최신 5건을 찾는다
 
 
 def get_auth_key():
-    return os.environ.get("OPENDART_API_KEY")
+    key = os.environ.get("OPENDART_API_KEY")
+    return key.strip() if key else key
 
 
 def fetch_recent_major_reports(key, corp_code, bgn_de, end_de):

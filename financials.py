@@ -38,7 +38,8 @@ EQUITY_NAMES = {"자본총계"}
 
 
 def get_auth_key():
-    return os.environ.get("OPENDART_API_KEY")
+    key = os.environ.get("OPENDART_API_KEY")
+    return key.strip() if key else key
 
 
 def to_number(v):

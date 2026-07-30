@@ -51,8 +51,9 @@ def load_config():
     if CONFIG_PATH.exists():
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             file_config = json.load(f)
+    auth_key = os.environ.get("KRX_AUTH_KEY") or file_config.get("auth_key")
     return {
-        "auth_key": os.environ.get("KRX_AUTH_KEY") or file_config.get("auth_key"),
+        "auth_key": auth_key.strip() if auth_key else auth_key,
         "thresholds_eok": file_config.get("thresholds_eok") or {"KOSPI": 300, "KOSDAQ": 200},
     }
 
