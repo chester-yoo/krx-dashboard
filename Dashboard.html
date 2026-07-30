@@ -312,7 +312,7 @@ function renderFinancials(code){
 
 function renderDisclosures(code){
   const panel = document.getElementById('disclosuresPanel');
-  const reports = disclosuresMap[code];
+  const reports = (disclosuresMap[code] || {}).reports;
   if(!reports || !reports.length){
     panel.innerHTML = '<div class="note" style="margin-top:12px;">최근 주요사항보고 없음</div>';
     return;

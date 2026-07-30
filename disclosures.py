@@ -3,8 +3,8 @@ OpenDART 주요사항보고(pblntf_ty=B) 최근 5건 수집
 =================================================
 data/disclosures.json: { 종목코드: [ {date, report_nm, rcept_no}, ... 최대 5건, 최신순 ] }
 
-재무정보(financials.py)와 달리 매번 최신 상태로 덮어써야 하므로 캐시하지 않고
-매 실행마다 전체 종목을 다시 조회한다.
+공시는 매번 최신 상태가 바뀔 수 있으므로 오래된 항목은 --refresh-days 이상 지나면
+다시 조회한다. 중간에 중단돼도 이어서 실행하면 이미 처리한 종목은 건너뛴다.
 
 사용법
   python disclosures.py update
@@ -51,14 +51,31 @@ def fetch_recent_major_reports(key, corp_code, bgn_de, end_de):
     ]
 
 
-def update(codes, key):
+def load_cache():
+    if not DISCLOSURES_PATH.exists():
+        return {}
+    with open(DISCLOSURES_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_cache(cache):
+    with open(DISCLOSURES_PATH, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=0, separators=(",", ":"))
+
+
+def update(codes, key, refresh_days=1):
     corp_map = financials.get_corp_code_map(key)
-    result = {}
-    end_de = datetime.now().strftime("%Y%m%d")
+    cache = load_cache()
+    today = datetime.now().strftime("%Y%m%d")
+    end_de = today
     bgn_de = (datetime.now() - timedelta(days=LOOKBACK_DAYS)).strftime("%Y%m%d")
 
     checked = 0
+    fetched = 0
     for code in dict.fromkeys(codes):
+        entry = cache.get(code)
+        if entry and entry.get("checked_at") == today:
+            continue  # 이미 오늘 처리함 (재시작 시 이어하기)
         corp_code = corp_map.get(code)
         if not corp_code:
             continue
@@ -66,19 +83,17 @@ def update(codes, key):
             reports = fetch_recent_major_reports(key, corp_code, bgn_de, end_de)
         except Exception as e:
             print(f"[disclosures] {code} 오류: {e}")
-            reports = []
-        if reports:
-            result[code] = reports
+            reports = (entry or {}).get("reports", [])
+        cache[code] = {"reports": reports, "checked_at": today}
         checked += 1
-        if checked % 200 == 0:
-            with open(DISCLOSURES_PATH, "w", encoding="utf-8") as f:
-                json.dump(result, f, ensure_ascii=False, indent=0, separators=(",", ":"))
-            print(f"[disclosures] 진행: {checked}건 확인, {len(result)}개 종목에 공시 있음")
+        fetched += 1
+        if fetched % 20 == 0:
+            save_cache(cache)
+            print(f"[disclosures] 진행: {fetched}건 처리 (전체 캐시 {len(cache)}개 종목)")
         time.sleep(0.15)
 
-    with open(DISCLOSURES_PATH, "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=0, separators=(",", ":"))
-    print(f"[disclosures] 완료: {checked}개 종목 확인, {len(result)}개 종목에 주요사항보고 있음")
+    save_cache(cache)
+    print(f"[disclosures] 완료: 이번 실행 {fetched}건 처리, 전체 캐시 {len(cache)}개 종목")
 
 
 if __name__ == "__main__":
