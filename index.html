@@ -281,38 +281,38 @@ function renderFinancials(code){
   const rows = [
     { label:'매출액', unit:'eok', calc:d=>eokFromWon(d.revenue) },
     { label:'영업이익', unit:'eok', calc:d=>eokFromWon(d.operating_profit) },
-    { label:'영업이익률', unit:'pct', calc:d=>pctOf(d.operating_profit, d.revenue) },
+    { label:'영업이익률', unit:'pct', ratio:true, calc:d=>pctOf(d.operating_profit, d.revenue) },
     { label:'당기순이익', unit:'eok', calc:d=>eokFromWon(d.net_income) },
-    { label:'당기순이익률', unit:'pct', calc:d=>pctOf(d.net_income, d.revenue) },
+    { label:'당기순이익률', unit:'pct', ratio:true, calc:d=>pctOf(d.net_income, d.revenue) },
     { label:'자산총계', unit:'eok', calc:d=>eokFromWon(d.assets) },
     { label:'부채총계', unit:'eok', calc:d=>eokFromWon(d.liabilities) },
     { label:'자본총계', unit:'eok', calc:d=>eokFromWon(d.equity) },
-    { label:'부채비율', unit:'pct', calc:d=>pctOf(d.liabilities, d.equity) },
+    { label:'부채비율', unit:'pct', ratio:true, calc:d=>pctOf(d.liabilities, d.equity) },
   ];
-  const fsLabel = years.map(y=>data[y].fs_div==='CFS'?'연결':'별도').join('/');
   panel.innerHTML = `
-    <h2 style="margin-top:16px;">연도별 재무정보 (억원, ${fsLabel})</h2>
+    <h2 style="margin-top:16px;">연도별 재무정보 (억원, 주재무제표)</h2>
     <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
       <thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--line-strong);"></th>
-        ${years.map(y=>`<th class="num" style="padding:6px 8px;border-bottom:2px solid var(--line-strong);">${y}</th>`).join('')}
+        ${years.map(y=>`<th class="num" style="padding:6px 8px;border-bottom:2px solid var(--line-strong);">${y}(${data[y].fs_div==='CFS'?'연결':'별도'})</th>`).join('')}
       </tr></thead>
       <tbody>
         ${rows.map(row=>`
-          <tr><td style="padding:5px 8px;color:var(--ink-soft);">${row.label}</td>
+          <tr><td style="padding:5px 8px;color:var(--ink-soft);${row.ratio?'font-style:italic;':''}">${row.label}</td>
             ${years.map(y=>{
               const v = row.calc(data[y] || {});
               const text = v==null ? '-' : (row.unit==='pct' ? v.toFixed(1)+'%' : v.toLocaleString());
-              return `<td class="num" style="padding:5px 8px;${v<0?'color:#a3311f;':''}">${text}</td>`;
+              const style = `padding:5px 8px;${row.ratio?'font-style:italic;':''}${v<0?'color:#d32f2f;font-weight:700;':''}`;
+              return `<td class="num" style="${style}">${text}</td>`;
             }).join('')}
           </tr>`).join('')}
       </tbody>
     </table>
-    <div class="note">출처: OpenDART 사업보고서 주요계정 (연결 우선, 없으면 별도) · 영업이익률=영업이익/매출액, 당기순이익률=당기순이익/매출액, 부채비율=부채총계/자본총계</div>`;
+    <div class="note">출처: OpenDART 사업보고서 주요계정 (연결 우선, 없으면 별도)</div>`;
 }
 
 function renderDisclosures(code){
   const panel = document.getElementById('disclosuresPanel');
-  const reports = disclosuresMap[code];
+  const reports = (disclosuresMap[code] || {}).reports;
   if(!reports || !reports.length){
     panel.innerHTML = '<div class="note" style="margin-top:12px;">최근 주요사항보고 없음</div>';
     return;
