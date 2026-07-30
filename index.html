@@ -277,7 +277,7 @@ function renderFinancials(code){
     panel.innerHTML = '<div class="note" style="margin-top:12px;">재무정보 없음 (DART 공시 미확인 종목이거나 아직 수집되지 않음)</div>';
     return;
   }
-  const years = Object.keys(data).sort((a,b)=>b.localeCompare(a)).slice(0,3);
+  const years = Object.keys(data).sort((a,b)=>b.localeCompare(a)).slice(0,3).reverse();
   const rows = [
     { label:'매출액', unit:'eok', calc:d=>eokFromWon(d.revenue) },
     { label:'영업이익', unit:'eok', calc:d=>eokFromWon(d.operating_profit) },
