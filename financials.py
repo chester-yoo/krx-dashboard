@@ -7,7 +7,7 @@ data/financials.json: { 종목코드: { 사업연도: {revenue, operating_profit
                                               assets, liabilities, equity, fs_div} } }
 
 사용법
-  python financials.py update [--years N]   history.json의 종목 중 최근 N개 연도(기본 3) 재무정보를
+  python financials.py update [--years N]   수집 데이터의 종목 중 최근 N개 연도(기본 3) 재무정보를
                                              캐시에 없는 것만 새로 조회
 """
 import json
@@ -22,8 +22,9 @@ from pathlib import Path
 
 import requests
 
+import store
+
 BASE_DIR = Path(__file__).resolve().parent
-HISTORY_PATH = BASE_DIR / "data" / "history.json"
 CORP_CODE_PATH = BASE_DIR / "data" / "corp_codes.json"
 FINANCIALS_PATH = BASE_DIR / "data" / "financials.json"
 
@@ -183,9 +184,8 @@ if __name__ == "__main__":
     years = 3
     if "--years" in sys.argv:
         years = int(sys.argv[sys.argv.index("--years") + 1])
-    if not HISTORY_PATH.exists():
-        print("data/history.json이 없습니다. 먼저 collect.py를 실행하세요.")
+    codes = store.all_codes()
+    if not codes:
+        print("data/history/에 수집 데이터가 없습니다. 먼저 collect.py를 실행하세요.")
         sys.exit(1)
-    history = json.load(open(HISTORY_PATH, encoding="utf-8"))
-    codes = sorted({r["code"] for r in history})
     update(codes, years, key)

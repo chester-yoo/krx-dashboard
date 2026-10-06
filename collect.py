@@ -1,7 +1,7 @@
 """
 KRX 일자별 시가총액 수집 - 로컬 Python 버전
 =============================================
-Google Sheets/Apps Script 없이 로컬 JSON 파일(data/history.json)에 누적 저장한다.
+Google Sheets/Apps Script 없이 로컬 JSON 파일(data/history/YYYYMM.json, store.py 참고)에 누적 저장한다.
 
 사용법
   python collect.py daily              최근 영업일(어제) 데이터 수집
@@ -23,10 +23,10 @@ from zoneinfo import ZoneInfo
 import requests
 
 import industry
+import store
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.json"
-HISTORY_PATH = BASE_DIR / "data" / "history.json"
 LOG_PATH = BASE_DIR / "data" / "collect.log"
 
 API_BASE = "https://data-dbg.krx.co.kr/svc/apis/sto"
@@ -56,19 +56,6 @@ def load_config():
         "auth_key": auth_key.strip() if auth_key else auth_key,
         "thresholds_eok": file_config.get("thresholds_eok") or {"KOSPI": 300, "KOSDAQ": 200},
     }
-
-
-def load_history():
-    if not HISTORY_PATH.exists():
-        return []
-    with open(HISTORY_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_history(records):
-    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(HISTORY_PATH, "w", encoding="utf-8") as f:
-        json.dump(records, f, ensure_ascii=False, indent=0, separators=(",", ":"))
 
 
 def is_excluded_name(name):
@@ -101,7 +88,9 @@ def krx_fetch(endpoint, bas_dd, auth_key):
     return data.get("OutBlock_1", [])
 
 
-def collect_for_date(bas_dd, config, history):
+def collect_for_date(bas_dd, config):
+    yyyymm = bas_dd[:6]
+    history = store.load_month(yyyymm)
     existing_keys = {f"{r['date']}|{r['code']}" for r in history}
     thresholds = config["thresholds_eok"]
     auth_key = config["auth_key"]
@@ -152,7 +141,7 @@ def collect_for_date(bas_dd, config, history):
 
     if new_rows:
         history.extend(new_rows)
-        save_history(history)
+        store.save_month(yyyymm, history)
         log(f"{len(new_rows)}행 추가 완료")
         new_codes = {r["code"] for r in new_rows}
         try:
@@ -166,21 +155,18 @@ def collect_for_date(bas_dd, config, history):
 
 def collect_daily():
     config = load_config()
-    history = load_history()
     yesterday = datetime.now(KST) - timedelta(days=1)
     bas_dd = yesterday.strftime("%Y%m%d")
-    collect_for_date(bas_dd, config, history)
+    collect_for_date(bas_dd, config)
 
 
 def collect_manual(bas_dd):
     config = load_config()
-    history = load_history()
-    collect_for_date(bas_dd, config, history)
+    collect_for_date(bas_dd, config)
 
 
 def backfill(start_str, end_str):
     config = load_config()
-    history = load_history()
     start = datetime.strptime(start_str, "%Y%m%d")
     end = datetime.strptime(end_str, "%Y%m%d")
     cur = start
@@ -190,7 +176,7 @@ def backfill(start_str, end_str):
             bas_dd = cur.strftime("%Y%m%d")
             log(f"[{bas_dd}] 수집 시작...")
             try:
-                collect_for_date(bas_dd, config, history)
+                collect_for_date(bas_dd, config)
             except Exception as e:
                 log(f"  오류: {e}")
             count += 1

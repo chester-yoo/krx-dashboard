@@ -3,7 +3,7 @@
 KRX Open API에는 업종 분류 데이터가 없어서 네이버 금융 공개 페이지를 사용한다.
 
 사용법
-  python industry.py update   data/history.json에 등장하는 종목 중 캐시에 없는 것만 새로 조회
+  python industry.py update   수집 데이터(data/history/)에 등장하는 종목 중 캐시에 없는 것만 새로 조회
 """
 import json
 import re
@@ -13,8 +13,9 @@ from pathlib import Path
 
 import requests
 
+import store
+
 BASE_DIR = Path(__file__).resolve().parent
-HISTORY_PATH = BASE_DIR / "data" / "history.json"
 CACHE_PATH = BASE_DIR / "data" / "industry.json"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -74,9 +75,8 @@ if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] != "update":
         print(__doc__)
         sys.exit(1)
-    if not HISTORY_PATH.exists():
-        print("data/history.json이 없습니다. 먼저 collect.py를 실행하세요.")
+    codes = store.all_codes()
+    if not codes:
+        print("data/history/에 수집 데이터가 없습니다. 먼저 collect.py를 실행하세요.")
         sys.exit(1)
-    history = json.load(open(HISTORY_PATH, encoding="utf-8"))
-    codes = sorted({r["code"] for r in history})
     update_missing(codes)
