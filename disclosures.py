@@ -18,10 +18,11 @@ from pathlib import Path
 
 import requests
 
+import store
+
 import financials  # corp_code 매핑 재사용
 
 BASE_DIR = Path(__file__).resolve().parent
-HISTORY_PATH = BASE_DIR / "data" / "history.json"
 DISCLOSURES_PATH = BASE_DIR / "data" / "disclosures.json"
 
 API_BASE = "https://opendart.fss.or.kr/api"
@@ -105,9 +106,8 @@ if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] != "update":
         print(__doc__)
         sys.exit(1)
-    if not HISTORY_PATH.exists():
-        print("data/history.json이 없습니다. 먼저 collect.py를 실행하세요.")
+    codes = store.all_codes()
+    if not codes:
+        print("data/history/에 수집 데이터가 없습니다. 먼저 collect.py를 실행하세요.")
         sys.exit(1)
-    history = json.load(open(HISTORY_PATH, encoding="utf-8"))
-    codes = sorted({r["code"] for r in history})
     update(codes, key)
