@@ -1,8 +1,8 @@
 """
 EV/EBITDA·순차입금·영업현금흐름·이자보상배율 계산용 확장 재무 지표 생성 (API 호출 없음)
 =====================================================================================
-입력: data/full_accounts.json(전체 재무제표 본문 관련 계정), data/xbrl_depr.json(XBRL 주석 감가상각 합계),
-      data/industry.json(금융업 제외용)
+입력: data/full_accounts.json(전체 재무제표 본문 관련 계정), data/notes_depr.json(사업보고서 원문 주석에서 자동 추출한 감가상각비),
+      data/xbrl_depr.json(XBRL 주석 감가상각 합계), data/financials.json(단위 검증용 자산총계), data/industry.json(금융업 제외용)
 출력: data/fin_ext.json { 종목코드: {y, fs, cash, debt, nd, op, da, da_src, ocf, icr, icr_basis} }  (금액 단위 억원)
 
 산식(최근 사업연도, 연결 우선)
@@ -10,7 +10,8 @@ EV/EBITDA·순차입금·영업현금흐름·이자보상배율 계산용 확장
   차입부채  = 차입금(단기·장기·유동성) + 사채(CB·BW·EB 포함) + 리스부채(유동·비유동)
   순차입금  = 차입부채 − 현금
   EBITDA    = 영업이익 + 감가상각비(유형·사용권·투자부동산) + 무형자산상각비
-              감가상각비는 재무제표 본문(현금흐름표 조정·손익) 우선, 없으면 XBRL 주석 합계
+              감가상각비 출처 우선순위: 재무제표 본문(현금흐름표 조정·손익) → 원문 주석(현금흐름 주석 → 성격별 분류) → XBRL 주석 합계
+              원문 주석 값의 단위는 자산총계 대비 0.05~30% 범위에 드는 단위(천원·원·백만원)로 판정하고, 맞는 단위가 없으면 버린다
   이자보상배율 = 영업이익 ÷ 이자비용 (이자비용이 없으면 금융비용으로 대신하고 icr_basis="금융비용")
   EV/EBITDA는 시가총액이 매일 바뀌므로 화면에서 (시가총액 + 순차입금) ÷ EBITDA로 계산한다.
 금융업(은행·보험·증권 등)은 EV 계열 지표가 의미 없어 제외한다.
@@ -25,6 +26,9 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 ACCOUNTS_PATH = BASE_DIR / "data" / "full_accounts.json"
 XBRL_PATH = BASE_DIR / "data" / "xbrl_depr.json"
+NOTES_PATH = BASE_DIR / "data" / "notes_depr.json"
+FINANCIALS_PATH = BASE_DIR / "data" / "financials.json"
+UNIT_MULT = {"천원": 1e3, "원": 1, "백만원": 1e6}
 INDUSTRY_PATH = BASE_DIR / "data" / "industry.json"
 OUT_PATH = BASE_DIR / "data" / "fin_ext.json"
 
@@ -113,12 +117,25 @@ def xbrl_da(facts, year):
     return None
 
 
+def notes_da(entry, assets):
+    pick = (entry or {}).get("pick")
+    if not pick or not assets:
+        return None
+    for unit, mult in UNIT_MULT.items():
+        v = pick["raw"] * mult
+        if 0.0005 <= v / assets <= 0.3:
+            return v
+    return None
+
+
 def build():
     accounts = load(ACCOUNTS_PATH, {})
     xbrl = load(XBRL_PATH, {})
     industry = load(INDUSTRY_PATH, {})
+    notes = load(NOTES_PATH, {})
+    fins = load(FINANCIALS_PATH, {})
     out = {}
-    stats = {"total": 0, "da_body": 0, "da_xbrl": 0, "nd": 0, "ocf": 0, "icr": 0}
+    stats = {"total": 0, "da_body": 0, "da_notes": 0, "da_xbrl": 0, "nd": 0, "ocf": 0, "icr": 0}
     for code, v in accounts.items():
         if not v.get("y") or FINANCIAL_INDUSTRY.search(industry.get(code, "")):
             continue
@@ -132,7 +149,10 @@ def build():
         ocf = first(rows, lambda r: r[0] == "CF" and r[1] == OCF_ID)
         ie = first(pl, lambda r: IE_NAME.search(r[2]))
         fc = first(pl, lambda r: FC_NAME.search(r[2]))
+        assets = (fins.get(code, {}).get(str(year)) or {}).get("assets")
         da, da_src = body_da(rows), "본문"
+        if da is None:
+            da, da_src = notes_da(notes.get(code), assets), "원문 주석(자동 추출)"
         if da is None:
             da, da_src = xbrl_da(xbrl.get(code, {}).get("facts", []), year), "XBRL 주석"
         if da is None:
@@ -145,6 +165,7 @@ def build():
                      "op": eok(op), "da": eok(da), "da_src": da_src, "ocf": eok(ocf), "icr": icr, "icr_basis": basis if icr is not None else None}
         stats["total"] += 1
         stats["da_body"] += da_src == "본문"
+        stats["da_notes"] += da_src == "원문 주석(자동 추출)"
         stats["da_xbrl"] += da_src == "XBRL 주석"
         stats["nd"] += nd is not None
         stats["ocf"] += ocf is not None
@@ -152,7 +173,7 @@ def build():
     with open(OUT_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
     t = stats["total"] or 1
-    print(f"[ext] 비금융 {stats['total']}개사 · 감가상각 본문 {stats['da_body']} + XBRL {stats['da_xbrl']} = {(stats['da_body']+stats['da_xbrl'])/t*100:.0f}% · "
+    print(f"[ext] 비금융 {stats['total']}개사 · 감가상각 본문 {stats['da_body']} + 원문 주석 {stats['da_notes']} + XBRL {stats['da_xbrl']} = {(stats['da_body']+stats['da_notes']+stats['da_xbrl'])/t*100:.0f}% · "
           f"순차입금 {stats['nd']/t*100:.0f}% · 영업CF {stats['ocf']/t*100:.0f}% · 이자보상배율 {stats['icr']/t*100:.0f}% -> {OUT_PATH.name}")
 
 

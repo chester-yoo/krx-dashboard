@@ -456,7 +456,7 @@ function makeFinCols(basis){
     impair:finCol('자본잠식',f=>({full:3,part:2,unk:0.5,none:0})[f.impair]??null,f=>({full:'<span class="badge b-crit">완전잠식</span>',part:'<span class="badge b-danger">부분잠식</span>',none:'정상',unk:'<span class="when">자본금 미수집</span>'})[f.impair]||'-',{num:false, ctr:true, core:true, tip:'완전잠식: 자본총계 < 0 / 부분잠식: 자본총계 < 자본금', ft:'select', sel:s=>s.fin?({full:'완전잠식',part:'부분잠식',none:'정상',unk:'자본금 미수집'}[s.fin.impair]||''):''}),
   };
 }
-const EXT_TIP = '최근 사업연도 기준(연결 우선). 금융업은 제외. 출처: OpenDART 전체 재무제표 본문, 감가상각비가 본문에 없으면 사업보고서 XBRL 주석';
+const EXT_TIP = '최근 사업연도 기준(연결 우선). 금융업은 제외. 출처: OpenDART 전체 재무제표 본문. 감가상각비가 본문에 없으면 사업보고서 원문 주석(현금흐름 주석·비용의 성격별 분류, 자동 추출) → XBRL 주석 순으로 보완';
 function evEbitdaOf(s,basis){
   const e=s.ext, c=basis(s);
   if(!e || e.nd==null || e.op==null || e.da==null || c==null) return null;

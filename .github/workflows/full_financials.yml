@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "sample (표본 10개사) / full (전체) / xbrl_sample (XBRL 주석 감가상각 표본) / xbrl (XBRL 감가상각 전체) / notes_sample (원문 주석 감가상각 표본)"
+        description: "sample (표본 10개사) / full (전체) / xbrl_sample (XBRL 주석 감가상각 표본) / xbrl (XBRL 감가상각 전체) / notes_sample (원문 주석 감가상각 표본) / notes (원문 주석 감가상각 전체)"
         required: true
         default: sample
 

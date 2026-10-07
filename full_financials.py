@@ -285,6 +285,119 @@ def notes_depr_candidates(text):
     return out
 
 
+NOTES_DEPR_PATH = BASE_DIR / "data" / "notes_depr.json"
+DA_COMBINED = re.compile(r"^감가상각비(및|와)(무형자산)?상각비$")
+NOTE_CF = re.compile(r"현금흐름|창출된 ?현금|영업활동")
+NOTE_NATURE = re.compile(r"성격별|영업비용")
+
+
+def _norm_label(label):
+    return re.sub(r"\s|\(\*?\d*\)|\*\d*", "", label)
+
+
+def select_notes_da(cands):
+    """표본 12개사로 검증한 규칙: 재무제표 주석 구간에서 처음 나오는 표 기준,
+    현금흐름 주석(감가상각비 행이 있을 때) 우선 → 성격별 분류/영업비용 주석."""
+    groups = []
+    for c in cands:
+        if "재무제표" not in c["section"] or not c["nums"]:
+            continue
+        if groups and groups[-1][0] == c["before"]:
+            groups[-1][1].append(c)
+        else:
+            groups.append((c["before"], [c]))
+
+    def total(rows, nature):
+        comb = [r for r in rows if DA_COMBINED.search(_norm_label(r["label"]))]
+        seen = {}
+        for r in (comb[:1] or rows):
+            n = r["nums"]
+            seen.setdefault(_norm_label(r["label"]), (abs(n[-1] if nature and len(n) >= 3 else n[0]), r.get("unit")))
+        return sum(v for v, _ in seen.values()), next(iter(seen.values()))[1]
+
+    for before, rows in groups:
+        tail = before[-80:]
+        if NOTE_CF.search(tail) and "변동" not in tail and any(
+                _norm_label(r["label"]).endswith("감가상각비") or DA_COMBINED.search(_norm_label(r["label"])) for r in rows):
+            v, unit = total(rows, False)
+            return {"raw": v, "unit": unit, "src": "현금흐름 주석"}
+    for before, rows in groups:
+        if NOTE_NATURE.search(before[-80:]):
+            v, unit = total(rows, True)
+            return {"raw": v, "unit": unit, "src": "성격별 분류"}
+    return None
+
+
+def fetch_document_text(key, rcept_no):
+    import io
+    import zipfile
+    resp = requests.get(API_BASE + "/document.xml", params={"crtfc_key": key, "rcept_no": rcept_no}, timeout=180)
+    z = zipfile.ZipFile(io.BytesIO(resp.content))
+    text = ""
+    for n in z.namelist():
+        raw = z.read(n)
+        for enc in ("utf-8", "cp949"):
+            try:
+                text += raw.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+    return text
+
+
+def notes_full(key):
+    corp_map = financials.get_corp_code_map(key)
+    accounts = json.load(open(ACCOUNTS_PATH, encoding="utf-8"))
+    xbrl = json.load(open(XBRL_DEPR_PATH, encoding="utf-8")) if XBRL_DEPR_PATH.exists() else {}
+    store = json.load(open(NOTES_DEPR_PATH, encoding="utf-8")) if NOTES_DEPR_PATH.exists() else {}
+    has_depr = lambda rows: any(re.search(r"감가상각|상각비", r[2] or "") or "Depreciation" in (r[1] or "") for r in rows)
+    targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c) and not has_depr(v["rows"]) and c not in store]
+    log(f"[notes] 대상 {len(targets)}개 종목 (본문에 감가상각비 없는 종목, 이미 받은 {len(store)}개 제외), 동시 {WORKERS}건")
+    started = time.time()
+    lock = threading.Lock()
+    done = found = errors = 0
+    stop = threading.Event()
+
+    def work(code):
+        if stop.is_set():
+            return code, None, "skipped"
+        try:
+            year = str(accounts[code]["y"])
+            rcept_no = (xbrl.get(code) or {}).get("rcept_no") or find_annual_report(key, corp_map[code], year)
+            if not rcept_no:
+                return code, {"rcept_no": None, "pick": None}, None
+            pick = select_notes_da(notes_depr_candidates(fetch_document_text(key, rcept_no)))
+            return code, {"rcept_no": rcept_no, "pick": pick}, None
+        except Exception as e:
+            return code, None, str(e)
+
+    def save():
+        with open(NOTES_DEPR_PATH, "w", encoding="utf-8") as f:
+            json.dump(store, f, ensure_ascii=False, separators=(",", ":"))
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        for fut in as_completed([pool.submit(work, c) for c in targets]):
+            code, result, err = fut.result()
+            with lock:
+                if result is not None:
+                    store[code] = result
+                    done += 1
+                    found += 1 if result["pick"] else 0
+                elif err and err != "skipped":
+                    errors += 1
+                    if errors <= 20:
+                        log(f"[notes] {code} 오류: {err}")
+                if done and done % SAVE_EVERY == 0:
+                    save()
+                    el = time.time() - started
+                    log(f"[notes] 진행 {done}/{len(targets)} · 추출 {found} · {el/60:.1f}분 · 남은 예상 {(len(targets)-done)*el/done/60:.0f}분")
+                if not stop.is_set() and time.time() - started > TIME_BUDGET_SEC:
+                    stop.set()
+                    log("[notes] 시간 제한에 도달해 남은 종목은 다음 실행에서 이어서 받습니다.")
+    save()
+    log(f"[notes] 완료: 이번 실행 {done}개 조회, 추출 {found}개, 오류 {errors}건, 총 {(time.time()-started)/60:.1f}분")
+
+
 def notes_sample(key):
     import io
     import zipfile
@@ -416,6 +529,8 @@ if __name__ == "__main__":
         xbrl_full(key)
     elif cmd == "notes_sample":
         notes_sample(key)
+    elif cmd == "notes":
+        notes_full(key)
     else:
         print(__doc__)
         sys.exit(1)
