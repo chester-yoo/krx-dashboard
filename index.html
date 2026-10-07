@@ -260,6 +260,7 @@ const FINANCIALS_URL = 'data/financials.json';
 const DISCLOSURES_URL = 'data/disclosures.json';
 const HALT_REASONS_URL = 'data/halt_reasons.json';
 const STAGE_URL = 'data/designation_stage.json';
+const EXT_URL = 'data/fin_ext.json';
 const AUTO_REFRESH_MS = 30 * 60 * 1000; // 30분마다 자동 새로고침 (수집은 매일 오전 9시 실행)
 const PAGE_SIZE = 100;
 const CHANGE_DAYS = 20;
@@ -433,7 +434,6 @@ const C = {
   streak:{label:'연속 미달', grp:'status', num:true, tip:`현행 기준 미만이 연속된 거래일 수. 막대는 ${REG.current.streakDays}거래일 대비 진행`, get:s=>s.streak, cell:streakCell},
   status:{label:'미달 단계', grp:'status', tip:'대시보드 자체 계산값이며 KRX의 실제 관리종목 지정 여부와 다를 수 있음', get:s=>s.statusRank, cell:statusBadge},
   stage:{label:'공시 단계', grp:'status', ft:'select', tip:'DART 거래소공시 제목에서 찾은 관리종목 관련 공시 단계. 공시가 없으면 공란. 세부 문구는 배지에 마우스를 올리면 표시', sel:s=>s.stage?s.stage.label:'', get:s=>s.stage?s.stage.label:'', cell:stageCell},
-  evEbitda:{label:'EV/EBITDA', grp:'fin', ctr:true, tip:'추후 추가 예정. EV = 시가총액 + 순차입금, EBITDA = 영업이익 + 감가상각비 (차입금·현금·감가상각비 추가 수집 필요)', get:s=>null, cell:s=>'-', cls:s=>'mute'},
   reason:{label:'정지 사유', grp:'status', ft:'select', tip:'"주권매매거래정지" 공시의 사유 문구를 우선 사용하고, 없으면 공시 제목 키워드로 추정. 근거가 없으면 공란. 실제 사유는 KRX KIND 확인', sel:s=>s.reason?s.reason.label:'', get:s=>s.reason?s.reason.label:'', cell:reasonCell},
 };
 
@@ -456,12 +456,34 @@ function makeFinCols(basis){
     impair:finCol('자본잠식',f=>({full:3,part:2,unk:0.5,none:0})[f.impair]??null,f=>({full:'<span class="badge b-crit">완전잠식</span>',part:'<span class="badge b-danger">부분잠식</span>',none:'정상',unk:'<span class="when">자본금 미수집</span>'})[f.impair]||'-',{num:false, ctr:true, core:true, tip:'완전잠식: 자본총계 < 0 / 부분잠식: 자본총계 < 자본금', ft:'select', sel:s=>s.fin?({full:'완전잠식',part:'부분잠식',none:'정상',unk:'자본금 미수집'}[s.fin.impair]||''):''}),
   };
 }
+const EXT_TIP = '최근 사업연도 기준(연결 우선). 금융업은 제외. 출처: OpenDART 전체 재무제표 본문, 감가상각비가 본문에 없으면 사업보고서 XBRL 주석';
+function evEbitdaOf(s,basis){
+  const e=s.ext, c=basis(s);
+  if(!e || e.nd==null || e.op==null || e.da==null || c==null) return null;
+  const ebitda = e.op + e.da;
+  return ebitda ? (c + e.nd) / ebitda : null;
+}
+function extCols(basis){
+  return {
+    evEbitda:{label:'EV/EBITDA', grp:'fin', num:true, tip:'EV ÷ EBITDA. EV = 시가총액 + 순차입금, EBITDA = 영업이익 + 감가상각비(무형자산상각 포함). 감가상각비를 확인하지 못한 종목은 공란, EBITDA 적자는 음수 그대로 표시. ' + EXT_TIP,
+      get:s=>evEbitdaOf(s,basis), cell:s=>{ const v=evEbitdaOf(s,basis); return v==null ? '-' : `<span title="감가상각비 출처: ${esc(s.ext.da_src||'')}">${v.toFixed(1)}배</span>`; },
+      cls:s=>{ const v=evEbitdaOf(s,basis); return v==null ? 'mute' : (v<0 ? 'neg' : ''); }},
+    nd:{label:'순차입금', grp:'fin', num:true, tip:'차입금 + 사채(CB·BW·EB 포함) + 리스부채 − (현금및현금성자산 + 단기금융상품), 억원. 음수는 순현금. 금융 자회사가 있는 그룹은 연결 차입금에 금융업 부채가 포함됨. ' + EXT_TIP,
+      get:s=>s.ext?s.ext.nd:null, cell:s=>s.ext&&s.ext.nd!=null ? fmtEok(s.ext.nd) : '-', cls:s=>s.ext&&s.ext.nd!=null ? '' : 'mute'},
+    ocf:{label:'영업CF', grp:'fin', num:true, tip:'영업활동현금흐름, 억원. ' + EXT_TIP,
+      get:s=>s.ext?s.ext.ocf:null, cell:s=>s.ext&&s.ext.ocf!=null ? fmtEok(s.ext.ocf) : '-', cls:s=>s.ext&&s.ext.ocf!=null ? (s.ext.ocf<0?'neg':'') : 'mute'},
+    icr:{label:'이자보상배율', grp:'fin', num:true, tip:'영업이익 ÷ 이자비용. 이자비용이 따로 없으면 금융비용(외환손실 등 포함)으로 대신한 근사치이며 * 로 표시. ' + EXT_TIP,
+      get:s=>s.ext?s.ext.icr:null, cell:s=>{ const e=s.ext; if(!e||e.icr==null) return '-'; const approx=e.icr_basis==='금융비용'; return `<span title="${approx?'금융비용 기준 근사치':'이자비용 기준'}">${e.icr.toFixed(1)}배${approx?'*':''}</span>`; },
+      cls:s=>s.ext&&s.ext.icr!=null ? (s.ext.icr<0?'neg':'') : 'mute'},
+  };
+}
 function pbrOf(s,basis){ const f=s.fin, c=basis(s); return f && f.eq>0 && c!=null ? c/f.eq : null; }
 function perOf(s,basis){ const f=s.fin, c=basis(s); return f && f.ni>0 && c!=null ? c/f.ni : null; }
 function pbrText(s,basis){ if(!s.fin||s.fin.eq==null) return '-'; return s.fin.eq<=0 ? 'N/M' : fmtX(pbrOf(s,basis)); }
 function perText(s,basis){ if(!s.fin||s.fin.ni==null) return '-'; return s.fin.ni<=0 ? 'N/M' : fmtX(perOf(s,basis)); }
 const FIN_ALL = ['finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'];
-const FIN_PER_FIRST = FIN_ALL.filter(k=>k!=='per').flatMap(k=>k==='pbr' ? ['per','pbr'] : [k]);
+const FIN_PER_FIRST = FIN_ALL.filter(k=>k!=='per').flatMap(k=>k==='pbr' ? ['per','pbr','evEbitda'] : [k]);
+const EXT_KEYS = ['evEbitda','nd','ocf','icr'];
 
 /* ---------- 필터 정의 ---------- */
 const PROFIT_OPTS = [['','무관'],['last','최근연도 흑자'],['all3','3개년 연속 흑자'],['loss','최근연도 적자']];
@@ -497,7 +519,7 @@ const VIEWS = {
     defaults:{}, sort:['cap',-1], side:true,
     base:s=>true,
     basis:s=>s.latest,
-    cols:['name','code','mkt','ind','cap','avg','px','per','evEbitda'], colOpts:{per:{ctr:true}},
+    cols:['name','code','mkt','ind','cap','avg','px','per','evEbitda'], colOpts:{per:{ctr:true}, evEbitda:{ctr:true}},
     cards:(list, f)=>[
       {label:'전체 종목', n:list.length, on:!f.capMin && !f.capMax, apply:f=>{ delete f.capMin; delete f.capMax; }},
       ...CAP_BANDS.map(([lbl,lo,hi])=>({label:lbl, n:list.filter(s=>s.latest!=null && (lo==null||s.latest>=lo) && (hi==null||s.latest<hi)).length,
@@ -559,11 +581,11 @@ VIEW_KEYS.forEach(k=>{ viewState[k] = {f:{...VIEWS[k].defaults}, h:{}, sortKey:V
 
 function colsFor(view){
   const v = VIEWS[view], st = viewState[view];
-  const all = Object.assign({}, C, makeFinCols(v.basis));
+  const all = Object.assign({}, C, makeFinCols(v.basis), extCols(v.basis));
   const mk = (k, extra) => { const c = Object.assign({key:k}, all[k], (v.colOpts||{})[k], extra); if(c.ft===undefined && c.num) c.ft='range'; return c; };
   if(st.finMode==='all' && v.cols.filter(k=>FIN_ALL.includes(k)).length > 1){
-    const base = v.cols.filter(k=>!FIN_ALL.includes(k) && !(v.hideStatusInFull && all[k].grp==='status')).map(k=>mk(k));
-    const tail = ['per','pbr','impair'].filter(k=>v.cols.includes(k)).map(k=>mk(k, {grp:'val'}));
+    const base = v.cols.filter(k=>!FIN_ALL.includes(k) && !EXT_KEYS.includes(k) && !(v.hideStatusInFull && all[k].grp==='status')).map(k=>mk(k));
+    const tail = ['per','pbr','evEbitda','nd','ocf','icr','impair'].filter(k=>v.cols.includes(k) || EXT_KEYS.includes(k)).map(k=>mk(k, {grp:'val'}));
     return [...base, ...yearCols(), ...tail];
   }
   return v.cols
@@ -617,7 +639,7 @@ function applyFilters(view){
   const v = VIEWS[view], st = viewState[view], f = st.f;
   const q = (f.q||'').trim().toLowerCase();
   const capMin=num(f.capMin), capMax=num(f.capMax), streakMin=num(f.streakMin);
-  const allCols = Object.assign({}, C, makeFinCols(v.basis));
+  const allCols = Object.assign({}, C, makeFinCols(v.basis), extCols(v.basis));
   const hcols = v.headerFilters ? [...v.cols.map(k=>Object.assign({key:k}, allCols[k], allCols[k].ft===undefined && allCols[k].num ? {ft:'range'} : {})), ...yearCols()] : null;
   return stocks.filter(v.base).filter(s=>{
     if(hcols && !headerPass(s,hcols,st.h)) return false;
@@ -981,10 +1003,11 @@ function loadData(){
     fetch(FINANCIALS_URL + '?t=' + Date.now()).then(r=>r.ok?r.json():{}).catch(()=>({})),
     fetch(HALT_REASONS_URL + '?t=' + Date.now()).then(r=>r.ok?r.json():{}).catch(()=>({})),
     fetch(STAGE_URL + '?t=' + Date.now()).then(r=>r.ok?r.json():{}).catch(()=>({})),
-  ]).then(([summary, financials, haltReasons, stageMap])=>{
+    fetch(EXT_URL + '?t=' + Date.now()).then(r=>r.ok?r.json():{}).catch(()=>({})),
+  ]).then(([summary, financials, haltReasons, stageMap, extMap])=>{
     dates = summary.dates; stocks = summary.stocks; financialsMap = financials;
     bySymbol = {};
-    stocks.forEach(s=>{ computeStock(s); s.reason = s.halted && haltReasons[s.c] ? haltReasons[s.c].reason : null; s.stage = !s.halted && stageMap[s.c] ? stageMap[s.c].stage : null; bySymbol[s.c] = s; });
+    stocks.forEach(s=>{ computeStock(s); s.reason = s.halted && haltReasons[s.c] ? haltReasons[s.c].reason : null; s.stage = !s.halted && stageMap[s.c] ? stageMap[s.c].stage : null; s.ext = extMap[s.c] || null; bySymbol[s.c] = s; });
     asofDate = formatDate(summary.asof);
     asofText = `기준일 ${asofDate}`;
     document.getElementById('sideFoot').innerHTML = `<b>${formatDate(summary.asof)}</b>데이터 기준일<br>매일 오전 9시 자동 수집`;

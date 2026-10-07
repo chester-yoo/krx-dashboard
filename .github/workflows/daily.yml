@@ -40,6 +40,9 @@ jobs:
       - name: Build dashboard summary
         run: python build_summary.py
 
+      - name: Build extended financial metrics
+        run: python build_ext_metrics.py
+
       - name: Update halt reasons (OpenDART exchange disclosures)
         env:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
