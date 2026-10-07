@@ -118,7 +118,9 @@
   td.mute{color:var(--ink-mute);}
   td.key{font-weight:700;}
   .tablewrap{max-height:600px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:#fff;}
-  body[data-view="all"] #cardsArea, body[data-view="all"] #filterPanel, body[data-view="all"] #tablePanel{max-width:1080px;}
+  body[data-view="all"] .side-panel{flex:1 1 300px;max-width:none;}
+  body[data-view="all"] #filterPanel .controls-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));}
+  body[data-view="all"] #filterPanel .field input, body[data-view="all"] #filterPanel .field select{width:100%;}
   body[data-view="all"] .tablewrap{max-height:400px;}
   thead tr.hf input, thead tr.hf select{width:100%;min-width:64px;font-size:11.5px;padding:3px 4px;border:1px solid var(--line-strong);border-radius:3px;font-family:inherit;background:#fff;color:var(--ink);}
   .rng-btn{width:100%;min-width:64px;background:#fff;color:var(--ink-soft);border:1px solid var(--line-strong);padding:3px 6px;font-size:11.5px;font-weight:500;border-radius:3px;}
@@ -282,6 +284,7 @@ let chartObj = null;
 let selectedCode = null;
 let currentView = 'all';
 let asofText = '';
+let asofDate = '';
 let openPop = null;
 
 function esc(v){ return String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -455,19 +458,19 @@ function gapInBand(g, key){ const [,lo,hi]=GAP_BANDS[key]; if(g==null) return fa
 const VIEWS = {
   all:{
     nav:'전체 상장사', sub:'코스피·코스닥 전 종목',
-    title:'전체 상장사', desc:'최신 일자 기준 코스피·코스닥 전 종목',
+    title:'전체 상장사', desc:'{ASOF}(데이터 업데이트 일자) 기준 코스피·코스닥 전 종목',
     filters:[...BASE_FILTERS, {id:'capMin', label:'시가총액 최소(억원)', type:'number', ph:'예: 100'}, {id:'capMax', label:'시가총액 최대(억원)', type:'number', ph:'예: 500'}],
     defaults:{}, sort:['cap',-1], side:true,
     base:s=>true,
     basis:s=>s.latest,
-    cols:['name','code','mkt','ind','cap','avg','chg20','px'],
+    cols:['name','code','mkt','ind','cap','avg','px'],
     cards:(list, f)=>[
       {label:'전체 종목', n:list.length, on:!f.capMin && !f.capMax, apply:f=>{ delete f.capMin; delete f.capMax; }},
       ...CAP_BANDS.map(([lbl,lo,hi])=>({label:lbl, n:list.filter(s=>s.latest!=null && (lo==null||s.latest>=lo) && (hi==null||s.latest<hi)).length,
         on:String(f.capMin??'')===String(lo??'') && String(f.capMax??'')===String(hi??'') && (lo!=null||hi!=null),
         apply:f=>{ if(lo==null) delete f.capMin; else f.capMin=String(lo); if(hi==null) delete f.capMax; else f.capMax=String(hi); f.capMaxExcl = hi!=null; }})),
     ],
-    note:`시가총액은 최신 거래일 기준(억원)입니다. 상단 구간 카드를 누르면 해당 시가총액 구간으로 필터링됩니다(상한 미만). "${CHANGE_DAYS}일 변화"는 ${CHANGE_DAYS}거래일 전 대비 시가총액 변화율입니다. 오른쪽 업종 분포는 현재 필터 결과 기준이며, 업종을 누르면 업종 필터가 적용됩니다.`,
+    note:`시가총액은 최신 거래일 기준(억원)입니다. 상단 구간 카드를 누르면 해당 시가총액 구간으로 필터링됩니다(상한 미만). 오른쪽 업종 분포는 현재 필터 결과 기준이며, 업종을 누르면 업종 필터가 적용됩니다.`,
   },
   halt:{
     nav:'거래정지', sub:'현재 거래정지 종목',
@@ -603,7 +606,7 @@ function daysUntil(iso){ const t = new Date(iso+'T00:00:00+09:00') - new Date();
 function renderHeader(){
   const v = VIEWS[currentView];
   document.getElementById('viewTitle').textContent = v.title;
-  document.getElementById('viewDesc').textContent = v.desc;
+  document.getElementById('viewDesc').textContent = v.desc.replace('{ASOF}', asofDate || '최신 일자');
   const dd = document.getElementById('dday');
   if(v.dday){ const d = daysUntil(REG.next.effectiveDate); dd.className='dday'; dd.title=`${REG.next.effectiveDate} 기준 (정확한 시행일 확인 필요)`; dd.textContent = d>0 ? `시행까지 D-${d}` : '시행 중'; }
   else { dd.className=''; dd.textContent=''; dd.title=''; }
@@ -942,7 +945,8 @@ function loadData(){
     dates = summary.dates; stocks = summary.stocks; financialsMap = financials;
     bySymbol = {};
     stocks.forEach(s=>{ computeStock(s); s.reason = s.halted && haltReasons[s.c] ? haltReasons[s.c].reason : null; s.stage = !s.halted && stageMap[s.c] ? stageMap[s.c].stage : null; bySymbol[s.c] = s; });
-    asofText = `기준일 ${formatDate(summary.asof)}`;
+    asofDate = formatDate(summary.asof);
+    asofText = `기준일 ${asofDate}`;
     document.getElementById('sideFoot').innerHTML = `<b>${formatDate(summary.asof)}</b>데이터 기준일<br>매일 오전 9시 자동 수집`;
     disclosuresPromise = null;
     renderView();
