@@ -161,6 +161,82 @@ def xbrl_sample(key):
     log(f"[xbrl] 표본 완료 -> {XBRL_SAMPLE_PATH.name}")
 
 
+XBRL_DEPR_PATH = BASE_DIR / "data" / "xbrl_depr.json"
+TOTAL_MEMBERS = {"ifrs-full:ConsolidatedMember": "CFS", "ifrs-full:SeparateMember": "OFS"}
+
+
+def xbrl_depr_one(key, corp_code, year):
+    """사업보고서 XBRL에서 감가상각·상각의 연결/별도 합계 사실만 추린다(세부 구분 차원이 붙은 값은 제외)."""
+    import io
+    import zipfile
+    rcept_no = find_annual_report(key, corp_code, year)
+    if not rcept_no:
+        return {"rcept_no": None, "facts": []}
+    resp = requests.get(API_BASE + "/fnlttXbrl.xml", params={"crtfc_key": key, "rcept_no": rcept_no, "reprt_code": "11011"}, timeout=120)
+    z = zipfile.ZipFile(io.BytesIO(resp.content))
+    text = "".join(z.read(n).decode("utf-8", "ignore") for n in z.namelist() if n.lower().endswith(".xbrl"))
+    contexts = {cid: (dict(PERIOD.findall(body)), [m[1] for m in MEMBER.findall(body)]) for cid, body in CONTEXT.findall(text)}
+    facts = []
+    for prefix, name, attrs, value in DEPR_FACT.findall(text):
+        m = re.search(r'contextRef="([^"]+)"', attrs)
+        period, members = contexts.get(m.group(1) if m else "", ({}, []))
+        if len(members) > 1 or (members and members[0] not in TOTAL_MEMBERS):
+            continue
+        end = period.get("endDate") or period.get("instant") or ""
+        num = to_number(value.strip())
+        if num is None or not end:
+            continue
+        facts.append([f"{prefix}:{name}", num, end[:4], TOTAL_MEMBERS.get(members[0], "") if members else ""])
+    return {"rcept_no": rcept_no, "facts": facts}
+
+
+def xbrl_full(key):
+    corp_map = financials.get_corp_code_map(key)
+    accounts = json.load(open(ACCOUNTS_PATH, encoding="utf-8"))
+    store = json.load(open(XBRL_DEPR_PATH, encoding="utf-8")) if XBRL_DEPR_PATH.exists() else {}
+    has_depr = lambda rows: any(re.search(r"감가상각|상각비", r[2] or "") or "Depreciation" in (r[1] or "") for r in rows)
+    targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c) and not has_depr(v["rows"]) and c not in store]
+    log(f"[xbrl] 대상 {len(targets)}개 종목 (본문에 감가상각비 없는 종목, 이미 받은 {len(store)}개 제외), 동시 {WORKERS}건")
+    started = time.time()
+    lock = threading.Lock()
+    done = found = errors = 0
+    stop = threading.Event()
+
+    def work(code):
+        if stop.is_set():
+            return code, None, "skipped"
+        try:
+            return code, xbrl_depr_one(key, corp_map[code], str(accounts[code]["y"])), None
+        except Exception as e:
+            return code, None, str(e)
+
+    def save():
+        with open(XBRL_DEPR_PATH, "w", encoding="utf-8") as f:
+            json.dump(store, f, ensure_ascii=False, separators=(",", ":"))
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        for fut in as_completed([pool.submit(work, c) for c in targets]):
+            code, result, err = fut.result()
+            with lock:
+                if result is not None:
+                    store[code] = result
+                    done += 1
+                    found += 1 if result["facts"] else 0
+                elif err and err != "skipped":
+                    errors += 1
+                    if errors <= 20:
+                        log(f"[xbrl] {code} 오류: {err}")
+                if done and done % SAVE_EVERY == 0:
+                    save()
+                    el = time.time() - started
+                    log(f"[xbrl] 진행 {done}/{len(targets)} · 감가상각 확보 {found} · {el/60:.1f}분 · 남은 예상 {(len(targets)-done)*el/done/60:.0f}분")
+                if not stop.is_set() and time.time() - started > TIME_BUDGET_SEC:
+                    stop.set()
+                    log("[xbrl] 시간 제한에 도달해 남은 종목은 다음 실행에서 이어서 받습니다.")
+    save()
+    log(f"[xbrl] 완료: 이번 실행 {done}개 조회, 감가상각 확보 {found}개, 오류 {errors}건, 총 {(time.time()-started)/60:.1f}분")
+
+
 def to_number(v):
     if v is None or v == "":
         return None
@@ -251,6 +327,8 @@ if __name__ == "__main__":
         full(key)
     elif cmd == "xbrl_sample":
         xbrl_sample(key)
+    elif cmd == "xbrl":
+        xbrl_full(key)
     else:
         print(__doc__)
         sys.exit(1)
