@@ -431,7 +431,7 @@ function makeFinCols(basis){
     debt:finCol('부채비율',f=>f.debt,f=>f.eqNonPos?'N/M':fmtPct(f.debt),{core:true}),
     growth:finCol('매출성장률',f=>f.growth,f=>fmtPct(f.growth,true),{neg:true, tip:'전년 대비 매출 증가율'}),
     pbr:{label:'PBR', grp:'fin', core:true, num:true, tip:'시가총액 ÷ 자본총계', get:s=>pbrOf(s,basis), cell:s=>pbrText(s,basis), cls:s=>pbrOf(s,basis)==null?'mute':''},
-    per:{label:'PER', grp:'fin', num:true, tip:'시가총액 ÷ 당기순이익(적자는 N/M)', get:s=>perOf(s,basis), cell:s=>perText(s,basis), cls:s=>perOf(s,basis)==null?'mute':''},
+    per:{label:'PER', grp:'fin', core:true, num:true, tip:'시가총액 ÷ 당기순이익(적자는 N/M)', get:s=>perOf(s,basis), cell:s=>perText(s,basis), cls:s=>perOf(s,basis)==null?'mute':''},
     impair:finCol('자본잠식',f=>({full:3,part:2,unk:0.5,none:0})[f.impair]??null,f=>({full:'<span class="badge b-crit">완전잠식</span>',part:'<span class="badge b-danger">부분잠식</span>',none:'정상',unk:'<span class="when">자본금 미수집</span>'})[f.impair]||'-',{num:false, ctr:true, core:true, tip:'완전잠식: 자본총계 < 0 / 부분잠식: 자본총계 < 자본금', ft:'select', sel:s=>s.fin?({full:'완전잠식',part:'부분잠식',none:'정상',unk:'자본금 미수집'}[s.fin.impair]||''):''}),
   };
 }
@@ -492,7 +492,7 @@ const VIEWS = {
     defaults:{}, sort:['cap',-1],
     base:s=>s.halted,
     basis:s=>s.latest,
-    cols:['name','code','mkt','ind','cap','reason', ...FIN_PER_FIRST], coreExtra:['per'],
+    cols:['name','code','mkt','ind','cap','reason', ...FIN_PER_FIRST],
     note:'표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다. 숫자 컬럼은 "범위" 버튼을 눌러 최소·최대를 입력합니다. 정지 사유는 "주권매매거래정지 (사유)" 공시의 사유 문구를 우선 사용하고, 없으면 공시 제목 키워드로 추정하며, 근거 공시가 없으면 비워 둡니다. 사유 배지 색은 위험(실질심사·상장폐지·감사의견·횡령·회생) / 기술적 정지(병합·분할·감자) / 기타(투자자 보호 등)로 구분합니다. 실제 사유와 다를 수 있으므로 KRX KIND에서 확인하세요.',
   },
   below:{
@@ -505,7 +505,7 @@ const VIEWS = {
     defaults:{}, sort:['streak',-1],
     base:s=>!s.halted && s.streak>=1,
     basis:s=>s.latest,
-    cols:['name','code','mkt','ind','cap','gapCur','streak','status','stage', ...FIN_ALL],
+    cols:['name','code','mkt','ind','cap','gapCur','streak','status','stage', ...FIN_PER_FIRST],
     cards:(list, f)=>[
       {label:'미달 종목 전체', n:list.length, on:!f.status && !f.stageF, apply:f=>{ delete f.status; delete f.stageF; }},
       {label:`1~${DANGER_DAYS-1}일 연속 미달`, n:list.filter(s=>s.status==='watch').length, on:f.status==='watch', apply:f=>{ f.status='watch'; delete f.stageF; }},
@@ -524,7 +524,7 @@ const VIEWS = {
     defaults:{}, sort:['gapNew',1],
     base:s=>!s.halted && s.streak===0 && s.avg!=null && s.avg < thr(s.m,'next'),
     basis:s=>s.avg,
-    cols:['name','code','mkt','ind','avg','gapNew','cap','gapCurAvg', ...FIN_ALL],
+    cols:['name','code','mkt','ind','avg','gapNew','cap','gapCurAvg', ...FIN_PER_FIRST],
     cards:(list, f)=>[
       {label:'사전검토 대상', n:list.length, on:!f.gapBand, apply:f=>{ delete f.gapBand; }},
       ...Object.entries(GAP_BANDS).map(([k,[lbl]])=>({label:`신규 기준 대비 ${lbl}`, n:list.filter(s=>gapInBand(s.gapNew,k)).length, tone:k==='a'?'dark':(k==='b'?'amber':''), on:f.gapBand===k, apply:f=>{ f.gapBand=k; }})),
@@ -540,7 +540,7 @@ function colsFor(view){
   const v = VIEWS[view], st = viewState[view];
   const all = Object.assign({}, C, makeFinCols(v.basis));
   return v.cols
-    .filter(k=>!(st.finMode==='core' && FIN_ALL.includes(k) && !all[k].core && !(v.coreExtra||[]).includes(k)))
+    .filter(k=>!(st.finMode==='core' && FIN_ALL.includes(k) && !all[k].core))
     .map(k=>{ const c = Object.assign({key:k}, all[k]); if(c.ft===undefined && c.num) c.ft='range'; return c; });
 }
 
