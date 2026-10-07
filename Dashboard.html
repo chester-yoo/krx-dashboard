@@ -61,6 +61,9 @@
   tbody tr:hover td{background:#f5f6f4;cursor:pointer;}
   tbody tr.selected td{background:#eef2fa;}
   td.num, th.num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums;}
+  td.ctr, th.ctr{text-align:center;}
+  #stockTable{width:auto;}
+  .clip{display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
   td.sticky, th.sticky{position:sticky;left:0;z-index:1;}
   thead th.sticky{z-index:3;}
   td.neg{color:#d32f2f;font-weight:700;}
@@ -256,10 +259,10 @@ function badgeHtml(s){
   return st + (s.halted ? '<span class="badge b-halt">거래정지</span>' : '');
 }
 const C = {
-  name:{label:'종목명', sticky:true, ft:'text', get:s=>s.n, cell:s=>esc(s.n)},
-  code:{label:'코드', ft:'text', get:s=>s.c, cell:s=>esc(s.c), num:true},
-  mkt:{label:'시장', ft:'select', sel:s=>s.m, get:s=>s.m, cell:MKT},
-  ind:{label:'업종', ft:'select', sel:s=>s.i||'', get:s=>s.i, cell:s=>esc(s.i||'-')},
+  name:{label:'종목명', sticky:true, clip:150, ft:'text', get:s=>s.n, cell:s=>esc(s.n)},
+  code:{label:'코드', ctr:true, ft:'text', get:s=>s.c, cell:s=>esc(s.c)},
+  mkt:{label:'시장', ctr:true, ft:'select', sel:s=>s.m, get:s=>s.m, cell:MKT},
+  ind:{label:'업종', clip:120, ft:'select', sel:s=>s.i||'', get:s=>s.i, cell:s=>esc(s.i||'-')},
   cap:{label:'시가총액(억원)', num:true, get:s=>s.latest, cell:s=>fmtEok(s.latest)},
   avg:{label:`${REG.avgDays}일 평균 시총(억원)`, num:true, get:s=>s.avg, cell:s=>fmtEok(s.avg) + (s.avgN<REG.avgDays ? ` <span class="note">(${s.avgN}일)</span>` : '')},
   px:{label:'종가(원)', num:true, get:s=>s.px, cell:s=>s.px==null?'-':Number(s.px).toLocaleString()},
@@ -514,7 +517,7 @@ function renderResults(rebuildHead=true){
     return r*st.sortDir;
   });
   if(rebuildHead){
-    let head = '<tr>' + cols.map(c=>`<th data-key="${c.key}" class="${c.num?'num':''} ${c.sticky?'sticky':''}">${esc(c.label)}${c.key===st.sortKey?`<span class="arr">${st.sortDir>0?'▲':'▼'}</span>`:''}</th>`).join('') + '</tr>';
+    let head = '<tr>' + cols.map(c=>`<th data-key="${c.key}" class="${c.num?'num':''} ${c.ctr?'ctr':''} ${c.sticky?'sticky':''}">${esc(c.label)}${c.key===st.sortKey?`<span class="arr">${st.sortDir>0?'▲':'▼'}</span>`:''}</th>`).join('') + '</tr>';
     if(v.headerFilters){
       const baseList = stocks.filter(v.base);
       head += '<tr class="hf">' + cols.map(c=>headFilterCell(c, st, baseList)).join('') + '</tr>';
@@ -531,8 +534,9 @@ function renderResults(rebuildHead=true){
   }
   const page = list.slice(0, shown);
   document.getElementById('stockBody').innerHTML = page.map(s=>`<tr data-code="${esc(s.c)}" class="${s.c===selectedCode?'selected':''}">${cols.map(c=>{
-    const cls = [c.num?'num':'', c.sticky?'sticky':'', c.cls?c.cls(s):''].join(' ').trim();
-    return `<td class="${cls}">${c.cell(s)}</td>`;
+    const cls = [c.num?'num':'', c.ctr?'ctr':'', c.sticky?'sticky':'', c.cls?c.cls(s):''].join(' ').trim();
+    const body = c.clip ? `<span class="clip" style="max-width:${c.clip}px" title="${esc(c.get(s)||'')}">${c.cell(s)}</span>` : c.cell(s);
+    return `<td class="${cls}">${body}</td>`;
   }).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" style="text-align:center;padding:20px;color:var(--ink-mute);">결과 없음</td></tr>`;
   document.getElementById('tblCount').textContent = `${list.length.toLocaleString()}개 종목` + (list.length>shown ? ` (상위 ${shown.toLocaleString()}개 표시)` : '');
   document.getElementById('moreWrap').style.display = list.length>shown ? 'block' : 'none';
