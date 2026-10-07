@@ -122,6 +122,8 @@
   body[data-view="all"] #filterPanel .controls-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));}
   body[data-view="all"] #filterPanel .field input, body[data-view="all"] #filterPanel .field select{width:100%;}
   body[data-view="all"] .tablewrap{max-height:400px;}
+  body:not([data-view="all"]) .tbl-main{flex:1 1 auto;}
+  body:not([data-view="all"]) #stockTable{width:100%;}
   thead tr.hf input, thead tr.hf select{width:100%;min-width:64px;font-size:11.5px;padding:3px 4px;border:1px solid var(--line-strong);border-radius:3px;font-family:inherit;background:#fff;color:var(--ink);}
   .rng-btn{width:100%;min-width:64px;background:#fff;color:var(--ink-soft);border:1px solid var(--line-strong);padding:3px 6px;font-size:11.5px;font-weight:500;border-radius:3px;}
   .rng-btn.on{color:var(--blue);border-color:#7f97c2;font-weight:700;}
