@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>상장사 시가총액 Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,22 +17,35 @@
     --danger-bg:#fbe7e3; --danger-fg:#a3311f; --danger-bd:#f0bcaf;
     --crit-bg:#7a2115; --crit-fg:#ffffff; --crit-bd:#7a2115;
     --mono: 'Noto Sans KR', sans-serif;
+    --side-w:208px;
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans KR',-apple-system,BlinkMacSystemFont,'Segoe UI',Pretendard,sans-serif;font-size:14px;line-height:1.5;}
-  .wrap{max-width:1180px;margin:0 auto;padding:24px 20px 56px;}
+  .layout{display:flex;min-height:100vh;}
+  .sidebar{width:var(--side-w);flex:0 0 var(--side-w);background:var(--navy);color:#fff;padding:22px 0;position:sticky;top:0;align-self:flex-start;height:100vh;}
+  .sidebar h1{font-size:15px;font-weight:700;margin:0 18px 20px;line-height:1.35;}
+  .sidebar nav a{display:block;padding:10px 18px;color:#c9d2e0;text-decoration:none;font-size:13.5px;font-weight:500;border-left:3px solid transparent;}
+  .sidebar nav a:hover{background:rgba(255,255,255,.06);color:#fff;}
+  .sidebar nav a.active{background:rgba(255,255,255,.12);color:#fff;border-left-color:#f2d49b;font-weight:700;}
+  .sidebar nav a small{display:block;font-size:11px;color:#97a3b8;font-weight:400;margin-top:1px;}
+  .main{flex:1;min-width:0;padding:24px 22px 56px;max-width:1500px;}
   header{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:18px;border-bottom:2px solid var(--navy);padding-bottom:14px;}
-  .titleblock h1{font-size:19px;font-weight:700;margin:0 0 4px;color:var(--navy);}
+  .titleblock h2{font-size:19px;font-weight:700;margin:0 0 4px;color:var(--navy);}
   .titleblock p{margin:0;color:var(--ink-soft);font-size:12px;}
   .asof{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--ink);text-align:right;white-space:nowrap;}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px 18px;margin-bottom:16px;}
-  .panel h2{font-size:12.5px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);margin:0 0 10px;font-weight:700;}
-  .controls-row{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;}
+  .panel h3.ph{font-size:12.5px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);margin:0 0 10px;font-weight:700;}
+  .controls-row{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;}
   .field{display:flex;flex-direction:column;gap:4px;}
   .field label{font-size:11.5px;color:var(--ink-soft);font-weight:600;}
-  .field input, .field select{padding:6px 8px;border:1px solid var(--line-strong);border-radius:4px;font-family:var(--mono);font-size:13px;width:90px;}
+  .field input, .field select{padding:6px 8px;border:1px solid var(--line-strong);border-radius:4px;font-family:var(--mono);font-size:13px;width:110px;}
   .field input[type=text]{width:180px;font-family:inherit;}
   .field select{width:140px;font-family:inherit;background:#fff;}
+  .field.check{flex-direction:row;align-items:center;gap:6px;padding-bottom:7px;}
+  .field.check input{width:auto;}
+  .field.check label{font-size:12px;}
+  .fin-group{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line-strong);}
+  .fin-group .glabel{font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:8px;}
   button{cursor:pointer;border:1px solid var(--navy);background:var(--navy);color:#fff;padding:7px 14px;border-radius:4px;font-size:12.5px;font-weight:600;}
   button:hover{opacity:0.9;}
   button.secondary{background:#fff;color:var(--navy);}
@@ -41,12 +55,16 @@
   .stat .lbl{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
   .stat.crit .num{color:var(--danger-fg);} .stat.warn .num{color:var(--watch-fg);}
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  thead th{position:sticky;top:0;background:var(--navy);color:#fff;text-align:center;padding:8px 9px;font-size:11px;text-transform:uppercase;font-weight:600;cursor:pointer;white-space:nowrap;}
-  tbody td{padding:7px 9px;border-bottom:1px solid var(--line);white-space:nowrap;}
-  tbody tr:hover{background:#f5f6f4;cursor:pointer;}
-  tbody tr.selected{background:#eef2fa;}
+  thead th{position:sticky;top:0;z-index:2;background:var(--navy);color:#fff;text-align:center;padding:8px 9px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;}
+  thead th .arr{opacity:.7;font-size:9px;margin-left:3px;}
+  tbody td{padding:7px 9px;border-bottom:1px solid var(--line);white-space:nowrap;background:#fff;}
+  tbody tr:hover td{background:#f5f6f4;cursor:pointer;}
+  tbody tr.selected td{background:#eef2fa;}
   td.num, th.num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums;}
-  #stockTable td.num{text-align:center;}
+  td.sticky, th.sticky{position:sticky;left:0;z-index:1;}
+  thead th.sticky{z-index:3;}
+  td.neg{color:#d32f2f;font-weight:700;}
+  td.mute{color:var(--ink-mute);}
   .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid;}
   .b-safe{background:var(--safe-bg);color:var(--safe-fg);border-color:var(--safe-bd);}
   .b-watch{background:var(--watch-bg);color:var(--watch-fg);border-color:var(--watch-bd);}
@@ -56,349 +74,557 @@
   .mkt-pill{font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;border:1px solid;}
   .mkt-pill.kospi{background:#e8edf5;color:#1f4b8f;border-color:#b9c9e6;}
   .mkt-pill.kosdaq{background:#fdf6d9;color:#8a6d00;border-color:#eadd9a;}
-  .tablewrap{max-height:480px;overflow:auto;border:1px solid var(--line);border-radius:6px;}
+  .tablewrap{max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:6px;}
+  .tbl-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;color:var(--ink-soft);}
+  .more{text-align:center;padding:10px;}
   .empty{padding:36px 20px;text-align:center;color:var(--ink-mute);}
   #detail{display:none;} #detail.open{display:block;}
   .detail-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
   .close-btn{background:none;border:none;color:var(--ink-mute);padding:4px 8px;}
-  .legend{display:flex;gap:14px;font-size:11px;color:var(--ink-soft);margin-top:8px;}
+  .legend{display:flex;gap:14px;font-size:11px;color:var(--ink-soft);margin-top:8px;flex-wrap:wrap;}
   .legend span{display:inline-flex;align-items:center;gap:5px;} .legend i{width:10px;height:10px;border-radius:2px;display:inline-block;}
-  .note{font-size:11.5px;color:var(--ink-mute);margin-top:4px;}
+  .note{font-size:11.5px;color:var(--ink-mute);margin-top:4px;line-height:1.55;}
+  @media (max-width:860px){
+    .layout{flex-direction:column;}
+    .sidebar{width:100%;flex:none;height:auto;position:static;padding:12px 0 0;}
+    .sidebar h1{margin:0 14px 8px;}
+    .sidebar nav{display:flex;overflow-x:auto;}
+    .sidebar nav a{flex:0 0 auto;border-left:none;border-bottom:3px solid transparent;padding:8px 14px;}
+    .sidebar nav a small{display:none;}
+    .sidebar nav a.active{border-bottom-color:#f2d49b;}
+    .main{padding:16px 12px 40px;}
+    header{flex-direction:column;align-items:flex-start;gap:6px;}
+    .asof{text-align:left;white-space:normal;}
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="titleblock">
-      <h1>상장사 시가총액 Dashboard</h1>
-    </div>
-    <div class="asof" id="asofLabel">로딩중...</div>
-  </header>
+<div class="layout">
+  <aside class="sidebar">
+    <h1>상장사 시가총액<br>Dashboard</h1>
+    <nav id="nav"></nav>
+  </aside>
 
-  <div class="panel">
-    <h2>검색</h2>
-    <div class="controls-row">
-      <div class="field"><label>종목명/코드 검색</label><input type="text" id="searchBox" placeholder="예: 삼성전자, 005930"></div>
-      <div class="field"><label>관리종목 지정 기준일수</label><input type="number" id="thDays" value="0"></div>
-      <div class="field"><label>시장</label>
-        <select id="marketFilter"><option value="">전체</option><option value="KOSPI">KOSPI</option><option value="KOSDAQ">KOSDAQ</option></select>
+  <div class="main">
+    <header>
+      <div class="titleblock">
+        <h2 id="viewTitle">-</h2>
+        <p id="viewDesc"></p>
       </div>
-      <div class="field"><label>산업</label>
-        <select id="industryFilter"><option value="">전체</option></select>
+      <div class="asof" id="asofLabel">로딩중...</div>
+    </header>
+
+    <div class="panel">
+      <h3 class="ph">검색 · 필터</h3>
+      <div id="filterArea"></div>
+      <div class="note" id="viewNote"></div>
+    </div>
+
+    <div class="stats" id="statsRow" style="display:none;"></div>
+
+    <div class="panel" id="detail">
+      <div class="detail-head">
+        <div><h3 id="detailName" style="margin:0;font-size:15px;">-</h3><div id="detailSub" style="color:var(--ink-soft);font-size:12px;font-family:var(--mono);">-</div></div>
+        <button class="close-btn" id="closeDetail">닫기 ✕</button>
       </div>
-      <div class="field"><label>시가총액 최소(억원)</label><input type="number" id="capMin" placeholder="예: 100"></div>
-      <div class="field"><label>시가총액 최대(억원)</label><input type="number" id="capMax" placeholder="예: 500"></div>
-      <div class="field"><label>상태</label>
-        <select id="statusFilter">
-          <option value="">전체</option>
-          <option value="safe">기준 충족</option>
-          <option value="watch">미달 주의</option>
-          <option value="danger">지정임박</option>
-          <option value="crit">관리종목 지정 대상</option>
-        </select>
+      <div style="position:relative;height:240px;"><canvas id="trendChart"></canvas></div>
+      <div class="legend" id="chartLegend"></div>
+      <div id="financialsPanel"></div>
+      <div id="disclosuresPanel"></div>
+    </div>
+
+    <div class="panel" id="tablePanel" style="display:none;">
+      <div class="tbl-meta"><span id="tblCount"></span><span>헤더 클릭 시 정렬 · 행 클릭 시 상세</span></div>
+      <div class="tablewrap">
+        <table id="stockTable"><thead id="stockHead"></thead><tbody id="stockBody"></tbody></table>
       </div>
-      <button id="searchBtn">검색</button>
-      <button class="secondary" id="resetBtn">새로고침</button>
+      <div class="more" id="moreWrap" style="display:none;"><button class="secondary" id="moreBtn">더 보기</button></div>
     </div>
-    <div class="note">관리종목 지정 기준: 코스피 300억/코스닥 200억, 30거래일 연속 미달<br>관리종목 지정 후 90거래일 내 45거래일 연속 시가총액 미회복시 상장폐지<br>27.01부터 코스피 500억/코스닥 300억으로 상향예정</div>
+
+    <div class="panel empty" id="emptyState">데이터를 불러오는 중입니다...</div>
   </div>
-
-  <div class="stats" id="statsRow" style="display:none;"></div>
-
-  <div class="panel" id="detail">
-    <div class="detail-head">
-      <div><h3 id="detailName" style="margin:0;font-size:15px;">-</h3><div id="detailSub" style="color:var(--ink-soft);font-size:12px;font-family:var(--mono);">-</div></div>
-      <button class="close-btn" id="closeDetail">닫기 ✕</button>
-    </div>
-    <div style="position:relative;height:240px;"><canvas id="trendChart"></canvas></div>
-    <div class="legend"><span><i style="background:#1f2b3d;"></i>시가총액(억원)</span><span><i style="background:#c0392b;"></i>기준선</span></div>
-    <div id="financialsPanel"></div>
-    <div id="disclosuresPanel"></div>
-  </div>
-
-  <div class="panel" id="tablePanel" style="display:none;">
-    <h2>종목별 현황 (클릭 시 추이 확인)</h2>
-    <div class="tablewrap">
-      <table id="stockTable">
-        <thead><tr>
-          <th data-key="market">시장</th><th data-key="name">종목명</th><th data-key="code">종목코드</th>
-          <th data-key="industry">산업</th>
-          <th class="num" data-key="market_cap_eok">시가총액(억원)</th>
-          <th class="num" data-key="streak">연속미달</th><th data-key="statusRank">상태</th>
-        </tr></thead>
-        <tbody id="stockBody"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="panel empty" id="emptyState">데이터를 불러오는 중입니다...</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
-const DATA_URL = 'data/history.json';
-const INDUSTRY_URL = 'data/industry.json';
+const SUMMARY_URL = 'data/summary.json';
 const FINANCIALS_URL = 'data/financials.json';
 const DISCLOSURES_URL = 'data/disclosures.json';
 const AUTO_REFRESH_MS = 30 * 60 * 1000; // 30분마다 자동 새로고침 (수집은 매일 오전 9시 실행)
+const PAGE_SIZE = 300;
 
-// 관리종목 지정 기준 (2026.7 시행 상장폐지 개혁방안) - 고정값, 변경 불가.
-// "상태" 배지는 항상 이 기준으로만 판정한다.
-const OFFICIAL_THRESHOLDS = { KOSPI: 300, KOSDAQ: 200 };
-const OFFICIAL_STREAK_LIMIT = 30;
+// 규제 수치 설정 (제도 변경 시 이 블록만 수정)
+// current: 현행 관리종목 지정 기준 / next: 상향 예정 기준 / avgDays: 사전검토용 평균 시총 기간
+const REG = {
+  current: { KOSPI: 300, KOSDAQ: 200, streakDays: 30 },
+  next:    { KOSPI: 500, KOSDAQ: 300, effective: '2027-01' },
+  avgDays: 30,
+};
+const DANGER_DAYS = Math.ceil(REG.current.streakDays * 0.66);
 
-let records = [];
-let industryMap = {};
+let dates = [];
+let stocks = [];
 let financialsMap = {};
+let disclosuresPromise = null;
 let disclosuresMap = {};
 let bySymbol = {};
-let sortKey = 'streak', sortDir = -1, selectedCode = null, chartObj = null;
+let chartObj = null;
+let selectedCode = null;
+let currentView = 'all';
+let shown = PAGE_SIZE;
 
-function formatDate(yyyymmdd){
-  if(!yyyymmdd || yyyymmdd.length !== 8) return yyyymmdd;
-  return yyyymmdd.slice(0,4) + '-' + yyyymmdd.slice(4,6) + '-' + yyyymmdd.slice(6,8);
+function esc(v){ return String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function formatDate(d){ return d && d.length===8 ? d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8) : (d||''); }
+function toEok(won){ return won==null ? null : won/1e8; }
+function fmtEok(n){ return n==null ? '-' : Math.round(n).toLocaleString(); }
+function fmtPct(n, sign){ return n==null ? '-' : (sign && n>0 ? '+' : '') + n.toFixed(1) + '%'; }
+function fmtX(n){ return n==null ? '-' : n.toFixed(2) + '배'; }
+function thr(market, set){ return (set==='next' ? REG.next : REG.current)[market] ?? REG[set==='next'?'next':'current'].KOSPI; }
+
+/* ---------- 데이터 가공 ---------- */
+function buildFin(code){
+  const fm = financialsMap[code];
+  if(!fm) return null;
+  const ys = Object.keys(fm).sort().reverse();
+  if(!ys.length) return null;
+  const d = fm[ys[0]];
+  const prev = ys[1] && Number(ys[1]) === Number(ys[0])-1 ? fm[ys[1]] : null;
+  const f = {
+    year: ys[0], fsDiv: d.fs_div==='CFS' ? '연결' : '별도',
+    rev: toEok(d.revenue), op: toEok(d.operating_profit), ni: toEok(d.net_income),
+    assets: toEok(d.assets), liab: toEok(d.liabilities), eq: toEok(d.equity), capital: toEok(d.capital),
+    years: ys.map(y=>({year:y, d:fm[y]})),
+  };
+  f.opm = f.rev>0 && f.op!=null ? f.op/f.rev*100 : null;
+  f.nim = f.rev>0 && f.ni!=null ? f.ni/f.rev*100 : null;
+  f.eqNonPos = f.eq!=null && f.eq<=0;
+  f.debt = f.eq>0 && f.liab!=null ? f.liab/f.eq*100 : null;
+  const pr = prev ? toEok(prev.revenue) : null;
+  f.growth = pr>0 && f.rev!=null ? (f.rev/pr-1)*100 : null;
+  if(f.eq==null) f.impair = null;
+  else if(f.eq<0) f.impair = 'full';
+  else if(f.capital!=null) f.impair = f.eq < f.capital ? 'part' : 'none';
+  else f.impair = 'unk';
+  return f;
 }
 
-function getStreakLimit(){
-  const n = Number(document.getElementById('thDays').value);
-  return Number.isNaN(n) || n < 0 ? 0 : n;
-}
+function computeStock(s){
+  const n = s.cap.length;
+  let last = null;
+  for(let i=n-1;i>=0;i--){ if(s.cap[i]!=null){ last = s.cap[i]; break; } }
+  s.latest = last;
 
-function computeStreak(history, threshold){
+  const tail = s.cap.filter(v=>v!=null).slice(-REG.avgDays);
+  s.avgN = tail.length;
+  s.avg = tail.length ? tail.reduce((a,b)=>a+b,0)/tail.length : null;
+
+  const tCur = thr(s.m,'current');
   let streak = 0;
-  for(let i=history.length-1;i>=0;i--){ if(history[i].market_cap_eok < threshold) streak++; else break; }
-  return streak;
+  for(let i=n-1;i>=0;i--){ const v=s.cap[i]; if(v==null) continue; if(v<tCur) streak++; else break; }
+  s.streak = streak;
+  s.gapCur = last!=null ? (last/tCur-1)*100 : null;
+  if(streak >= REG.current.streakDays){ s.status='crit'; s.statusLabel='관리종목 지정 대상'; s.statusRank=3; }
+  else if(streak >= DANGER_DAYS){ s.status='danger'; s.statusLabel=`지정 임박(연속${DANGER_DAYS}일)`; s.statusRank=2; }
+  else if(streak >= 1){ s.status='watch'; s.statusLabel='미달 주의'; s.statusRank=1; }
+  else { s.status='safe'; s.statusLabel='기준 충족'; s.statusRank=0; }
+
+  const tNext = thr(s.m,'next');
+  s.gapNew = s.avg!=null ? (s.avg/tNext-1)*100 : null;
+  s.gapCurAvg = s.avg!=null ? (s.avg/tCur-1)*100 : null;
+  s.newOnly = s.avg!=null && s.avg>=tCur && s.avg<tNext;
+
+  let k = 0;
+  while(k<n && s.h[n-1-k]==='1') k++;
+  s.halted = k>0;
+  s.haltDays = k;
+  s.haltFromStart = k>0 && k===n;
+  s.haltStart = k>0 ? dates[n-k] : null;
+  s.preHaltCap = null;
+  for(let i=n-k-1;i>=0;i--){ if(s.cap[i]!=null){ s.preHaltCap = s.cap[i]; break; } }
+
+  s.fin = buildFin(s.c);
 }
 
-function populateIndustryOptions(list){
-  const sel = document.getElementById('industryFilter');
-  const current = sel.value;
-  const industries = [...new Set(list.map(s=>s.industry).filter(Boolean))].sort();
-  sel.innerHTML = '<option value="">전체</option>' + industries.map(i=>`<option value="${i}">${i}</option>`).join('');
-  if(industries.includes(current)) sel.value = current;
-}
-
-function rebuild(){
-  bySymbol = {};
-  records.forEach(r=>{
-    if(!bySymbol[r.code]) bySymbol[r.code] = {code:r.code, name:r.name, market:r.market, industry:industryMap[r.code]||'', history:[]};
-    bySymbol[r.code].history.push(r);
-  });
-  const list = Object.values(bySymbol);
-  list.forEach(s=>{
-    s.history.sort((a,b)=> a.date.localeCompare(b.date));
-    s.latest = s.history[s.history.length-1];
-
-    // 상태 판정: 코스피 300억/코스닥 200억/30일 고정 기준 (필터 입력값과 무관)
-    const officialThreshold = OFFICIAL_THRESHOLDS[s.market] ?? OFFICIAL_THRESHOLDS.KOSPI;
-    s.threshold = officialThreshold;
-    const streak = computeStreak(s.history, officialThreshold);
-    s.streak = streak;
-    s.pctOfThreshold = officialThreshold>0 ? ((s.latest.market_cap_eok/officialThreshold - 1)*100) : 0;
-    const dangerDays = Math.ceil(OFFICIAL_STREAK_LIMIT*0.66);
-    if(streak >= OFFICIAL_STREAK_LIMIT){ s.status='crit'; s.statusLabel='관리종목 지정 대상'; s.statusRank=3; }
-    else if(streak >= dangerDays){ s.status='danger'; s.statusLabel=`지정 임박(연속${dangerDays}일)`; s.statusRank=2; }
-    else if(streak >= 1){ s.status='watch'; s.statusLabel='미달 주의'; s.statusRank=1; }
-    else { s.status='safe'; s.statusLabel='기준 충족'; s.statusRank=0; }
-  });
-  populateIndustryOptions(list);
-  renderStats(list);
-  renderTable(list);
-  const dates = records.map(r=>r.date).sort();
-  document.getElementById('asofLabel').textContent = dates.length ? ('최신: '+formatDate(dates[dates.length-1])+' · '+[...new Set(dates)].length+' 거래일(누적)') : '데이터 없음';
-  document.getElementById('emptyState').style.display = list.length ? 'none':'block';
-  document.getElementById('statsRow').style.display = list.length ? 'grid':'none';
-  document.getElementById('tablePanel').style.display = list.length ? 'block':'none';
-}
-
-function renderStats(list){
-  const kospiBelow = list.filter(s=>s.market==='KOSPI' && s.streak>0).length;
-  const kosdaqBelow = list.filter(s=>s.market==='KOSDAQ' && s.streak>0).length;
-  const critCount = list.filter(s=>s.status==='crit').length;
-  const dangerCount = list.filter(s=>s.status==='danger').length;
-  const dangerDays = Math.ceil(OFFICIAL_STREAK_LIMIT*0.66);
-  document.getElementById('statsRow').innerHTML = `
-    <div class="stat"><div class="num">${list.length.toLocaleString()}</div><div class="lbl">전체 추적 종목</div></div>
-    <div class="stat warn"><div class="num">${kospiBelow.toLocaleString()}</div><div class="lbl">코스피 기준 미달</div></div>
-    <div class="stat warn"><div class="num">${kosdaqBelow.toLocaleString()}</div><div class="lbl">코스닥 기준 미달</div></div>
-    <div class="stat crit"><div class="num">${critCount.toLocaleString()}</div><div class="lbl">관리종목 지정 대상</div></div>
-    <div class="stat"><div class="num">${dangerCount.toLocaleString()}</div><div class="lbl">지정 임박(${dangerDays}일 이상)</div></div>`;
-}
-
+/* ---------- 컬럼 정의 ---------- */
+const MKT = s => `<span class="mkt-pill ${s.m.toLowerCase()}">${s.m}</span>`;
 function badgeHtml(s){
   const cls={watch:'b-watch',danger:'b-danger',crit:'b-crit'}[s.status];
-  const statusBadge = s.status==='safe' ? '' : `<span class="badge ${cls}">${s.statusLabel}</span>`;
-  const haltBadge = s.latest && s.latest.halted ? `<span class="badge b-halt">거래정지</span>` : '';
-  return statusBadge + haltBadge;
+  const st = s.status==='safe' ? '' : `<span class="badge ${cls}">${s.statusLabel}</span>`;
+  return st + (s.halted ? '<span class="badge b-halt">거래정지</span>' : '');
+}
+const C = {
+  name:{label:'종목명', sticky:true, get:s=>s.n, cell:s=>esc(s.n)},
+  code:{label:'코드', get:s=>s.c, cell:s=>esc(s.c), num:true},
+  mkt:{label:'시장', get:s=>s.m, cell:MKT},
+  ind:{label:'업종', get:s=>s.i, cell:s=>esc(s.i||'-')},
+  cap:{label:'시가총액(억원)', num:true, get:s=>s.latest, cell:s=>fmtEok(s.latest)},
+  avg:{label:`${REG.avgDays}일 평균 시총(억원)`, num:true, get:s=>s.avg, cell:s=>fmtEok(s.avg) + (s.avgN<REG.avgDays ? ` <span class="note">(${s.avgN}일)</span>` : '')},
+  px:{label:'종가(원)', num:true, get:s=>s.px, cell:s=>s.px==null?'-':Number(s.px).toLocaleString()},
+  haltDays:{label:'정지 일수', num:true, get:s=>s.haltDays, cell:s=>s.haltFromStart ? `${s.haltDays}일 이상` : `${s.haltDays}일`},
+  haltStart:{label:'정지 시작일', num:true, get:s=>s.haltStart, cell:s=>s.haltStart ? (s.haltFromStart ? '≤ ' : '') + formatDate(s.haltStart) : '-'},
+  preCap:{label:'정지 직전 시총(억원)', num:true, get:s=>s.preHaltCap, cell:s=>s.haltFromStart ? '<span class="note">데이터 이전</span>' : fmtEok(s.preHaltCap)},
+  gapCur:{label:'현행 기준 대비', num:true, get:s=>s.gapCur, cell:s=>fmtPct(s.gapCur,true), cls:s=>s.gapCur<0?'neg':''},
+  streak:{label:'연속미달(거래일)', num:true, get:s=>s.streak, cell:s=>s.streak},
+  status:{label:'상태', get:s=>s.statusRank, cell:badgeHtml},
+  gapNew:{label:'신규 기준 대비', num:true, get:s=>s.gapNew, cell:s=>fmtPct(s.gapNew,true), cls:s=>s.gapNew<0?'neg':''},
+  gapCurAvg:{label:'현행 기준 대비(평균)', num:true, get:s=>s.gapCurAvg, cell:s=>fmtPct(s.gapCurAvg,true), cls:s=>s.gapCurAvg<0?'neg':''},
+  tag:{label:'구분', get:s=>s.newOnly?1:0, cell:s=>(s.newOnly ? '<span class="badge b-watch">현행 통과 → 신규 미달</span>' : '<span class="badge b-danger">현행도 미달</span>') + (s.halted ? '<span class="badge b-halt">거래정지</span>' : '')},
+};
+
+function finCol(key,label,get,cell,opts={}){ return Object.assign({label, num:true, get:s=>s.fin?get(s.fin,s):null, cell:s=>s.fin?cell(s.fin,s):'-', cls:s=>{const v=s.fin?get(s.fin,s):null; return v==null?'mute':(opts.neg && v<0?'neg':'');}}, opts); }
+function makeFinCols(basis){
+  return {
+    finBase:finCol('finBase','재무 기준',f=>f.year,f=>`${f.year}(${f.fsDiv})`,{num:false}),
+    rev:finCol('rev','매출액(억원)',f=>f.rev,f=>fmtEok(f.rev),{neg:true}),
+    op:finCol('op','영업이익(억원)',f=>f.op,f=>fmtEok(f.op),{neg:true}),
+    opm:finCol('opm','영업이익률',f=>f.opm,f=>fmtPct(f.opm),{neg:true}),
+    ni:finCol('ni','당기순이익(억원)',f=>f.ni,f=>fmtEok(f.ni),{neg:true}),
+    nim:finCol('nim','순이익률',f=>f.nim,f=>fmtPct(f.nim),{neg:true}),
+    assets:finCol('assets','자산총계(억원)',f=>f.assets,f=>fmtEok(f.assets)),
+    liab:finCol('liab','부채총계(억원)',f=>f.liab,f=>fmtEok(f.liab)),
+    eq:finCol('eq','자본총계(억원)',f=>f.eq,f=>fmtEok(f.eq),{neg:true}),
+    debt:finCol('debt','부채비율',f=>f.debt,f=>f.eqNonPos?'N/M':fmtPct(f.debt)),
+    growth:finCol('growth','매출성장률(YoY)',f=>f.growth,f=>fmtPct(f.growth,true),{neg:true}),
+    pbr:{label:'PBR', num:true, get:s=>pbrOf(s,basis), cell:s=>pbrText(s,basis), cls:s=>pbrOf(s,basis)==null?'mute':''},
+    per:{label:'PER', num:true, get:s=>perOf(s,basis), cell:s=>perText(s,basis), cls:s=>perOf(s,basis)==null?'mute':''},
+    impair:finCol('impair','자본잠식',f=>({full:3,part:2,unk:0.5,none:0})[f.impair]??null,f=>({full:'<span class="badge b-crit">완전잠식</span>',part:'<span class="badge b-danger">부분잠식</span>',none:'정상',unk:'<span class="note">자본금 미수집</span>'})[f.impair]||'-',{num:false}),
+  };
+}
+function pbrOf(s,basis){ const f=s.fin, c=basis(s); return f && f.eq>0 && c!=null ? c/f.eq : null; }
+function perOf(s,basis){ const f=s.fin, c=basis(s); return f && f.ni>0 && c!=null ? c/f.ni : null; }
+function pbrText(s,basis){ if(!s.fin||s.fin.eq==null) return '-'; return s.fin.eq<=0 ? 'N/M' : fmtX(pbrOf(s,basis)); }
+function perText(s,basis){ if(!s.fin||s.fin.ni==null) return '-'; return s.fin.ni<=0 ? 'N/M' : fmtX(perOf(s,basis)); }
+
+/* ---------- 필터 정의 ---------- */
+const PROFIT_OPTS = [['','무관'],['last','최근연도 흑자'],['all3','3개년 연속 흑자'],['loss','최근연도 적자']];
+const BASE_FILTERS = [
+  {id:'q', label:'종목명/코드 검색', type:'text', ph:'예: 삼성전자, 005930'},
+  {id:'market', label:'시장', type:'select', opts:[['','전체'],['KOSPI','KOSPI'],['KOSDAQ','KOSDAQ']]},
+  {id:'industry', label:'산업', type:'select', opts:'industry'},
+];
+const FIN_FILTERS = [
+  {id:'opMode', label:'영업이익', type:'select', opts:PROFIT_OPTS},
+  {id:'opmMin', label:'영업이익률 ≥ (%)', type:'number'},
+  {id:'niMode', label:'당기순이익', type:'select', opts:PROFIT_OPTS},
+  {id:'growthMin', label:'매출성장률 ≥ (%)', type:'number'},
+  {id:'debtMax', label:'부채비율 ≤ (%)', type:'number'},
+  {id:'pbrMax', label:'PBR ≤ (배)', type:'number'},
+  {id:'perMax', label:'PER ≤ (배)', type:'number'},
+  {id:'impair', label:'자본잠식 종목', type:'select', opts:[['','포함'],['full','완전잠식 제외'],['any','부분·완전잠식 제외(자본금 수집분만)']]},
+  {id:'incNoData', label:'재무 데이터 없는 종목 포함', type:'check'},
+];
+
+const VIEWS = {
+  all:{
+    nav:'전체 상장사', sub:'코스피·코스닥 전 종목',
+    title:'전체 상장사', desc:'최신 일자 기준 코스피·코스닥 전 종목',
+    filters:[...BASE_FILTERS, {id:'capMin', label:'시가총액 최소(억원)', type:'number', ph:'예: 100'}, {id:'capMax', label:'시가총액 최대(억원)', type:'number', ph:'예: 500'}],
+    defaults:{}, sort:['cap',-1],
+    base:s=>true,
+    basis:s=>s.latest,
+    cols:['name','code','mkt','ind','cap','avg','px'],
+    stats:list=>[['전체 종목',list.length],['코스피',list.filter(s=>s.m==='KOSPI').length],['코스닥',list.filter(s=>s.m==='KOSDAQ').length],['거래정지',list.filter(s=>s.halted).length]],
+    note:'',
+  },
+  halt:{
+    nav:'거래정지', sub:'현재 거래정지 종목',
+    title:'거래정지', desc:'최신 일자 기준 거래정지 상태인 종목',
+    filters:[...BASE_FILTERS, {id:'haltMin', label:'정지 일수 ≥', type:'number'}],
+    defaults:{}, sort:['haltDays',-1],
+    base:s=>s.halted,
+    basis:s=>s.latest,
+    cols:['name','code','mkt','ind','cap','haltDays','haltStart','preCap','finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'],
+    stats:list=>[['거래정지 종목',list.length],['코스피',list.filter(s=>s.m==='KOSPI').length],['코스닥',list.filter(s=>s.m==='KOSDAQ').length],[`보유기간 내내 정지`,list.filter(s=>s.haltFromStart).length]],
+    note:`정지 일수는 보유 이력(${'{N}'}거래일) 안에서 최신일부터 연속 정지된 일수입니다. 이력 시작일까지 이어지면 "N일 이상"으로 표시하며 실제 정지 시작일은 그 이전입니다. 거래정지 사유는 제공하지 않습니다.`,
+  },
+  below:{
+    nav:'시가총액 미달', sub:'현행 기준 미달 종목',
+    title:'시가총액 미달', desc:`현행 기준(코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억) 미달 종목 · 대시보드 자체 계산`,
+    filters:[...BASE_FILTERS, {id:'streakMin', label:'연속미달 N일 이상', type:'number'},
+      {id:'status', label:'상태', type:'select', opts:[['','전체'],['watch','미달 주의'],['danger','지정 임박'],['crit','관리종목 지정 대상']]}],
+    finFilters:true,
+    defaults:{streakMin:'1'}, sort:['streak',-1],
+    base:s=>true,
+    basis:s=>s.latest,
+    cols:['name','code','mkt','ind','cap','gapCur','streak','status','finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'],
+    stats:list=>[['미달 종목(1일 이상)',list.filter(s=>s.streak>0).length],['코스피 미달',list.filter(s=>s.m==='KOSPI'&&s.streak>0).length],['코스닥 미달',list.filter(s=>s.m==='KOSDAQ'&&s.streak>0).length],['지정 대상',list.filter(s=>s.status==='crit').length,'crit'],[`지정 임박(${DANGER_DAYS}일 이상)`,list.filter(s=>s.status==='danger').length]],
+    note:`지정 기준: 코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억, ${REG.current.streakDays}거래일 연속 미달. 관리종목 지정 후 90거래일 내 45거래일 연속 시가총액 미회복 시 상장폐지. "지정 대상"은 KRX가 실제 지정한 종목이 아니라 이 대시보드의 자체 계산값입니다. PBR·PER 분자는 최신 시가총액입니다.`,
+  },
+  new:{
+    nav:'신규 기준 사전검토', sub:`${REG.next.effective.replace('-','.')} 상향 대비`,
+    title:`신규 기준 사전검토 (${REG.next.effective.replace('-','.')})`,
+    desc:`최근 ${REG.avgDays}거래일 평균 시가총액이 신규 기준(코스피 ${REG.next.KOSPI}억 / 코스닥 ${REG.next.KOSDAQ}억) 미만인 종목`,
+    filters:[...BASE_FILTERS, {id:'onlyNew', label:'현행 통과 → 신규 미달만', type:'check'}],
+    finFilters:true,
+    defaults:{}, sort:['gapNew',1],
+    base:s=>s.avg!=null && s.avg < thr(s.m,'next'),
+    basis:s=>s.avg,
+    cols:['name','code','mkt','ind','cap','avg','gapNew','gapCurAvg','tag','finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'],
+    stats:list=>[['신규 기준 미달',list.length],['코스피',list.filter(s=>s.m==='KOSPI').length],['코스닥',list.filter(s=>s.m==='KOSDAQ').length],['현행 통과 → 신규 미달',list.filter(s=>s.newOnly).length,'warn']],
+    note:`연속미달일수가 아니라 최근 ${REG.avgDays}거래일 단순평균 시가총액으로 판정한 단순 추출이며, 실제 지정 요건 판정이 아닙니다. 현행 기준 대비 %도 같은 평균 시총 기준입니다. PBR·PER 분자는 ${REG.avgDays}일 평균 시총입니다. 거래일이 ${REG.avgDays}일 미만인 종목은 보유 일수로 평균합니다.`,
+  },
+};
+const VIEW_KEYS = Object.keys(VIEWS);
+const viewState = {};
+VIEW_KEYS.forEach(k=>{ viewState[k] = {f:{...VIEWS[k].defaults}, sortKey:VIEWS[k].sort[0], sortDir:VIEWS[k].sort[1]}; });
+
+function colsFor(view){
+  const v = VIEWS[view];
+  const all = Object.assign({}, C, makeFinCols(v.basis));
+  return v.cols.map(k=>Object.assign({key:k}, all[k]));
 }
 
-function renderTable(list){
-  const q = document.getElementById('searchBox').value.trim().toLowerCase();
-  const streakLimit = getStreakLimit();
-  const marketFilter = document.getElementById('marketFilter').value;
-  const industryFilter = document.getElementById('industryFilter').value;
-  const statusFilter = document.getElementById('statusFilter').value;
-  const capMin = document.getElementById('capMin').value.trim();
-  const capMax = document.getElementById('capMax').value.trim();
-
-  let filtered = list.filter(s => s.streak >= streakLimit);
-  filtered = filtered.filter(s => !q || s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q));
-  filtered = filtered.filter(s => !marketFilter || s.market === marketFilter);
-  filtered = filtered.filter(s => !industryFilter || s.industry === industryFilter);
-  filtered = filtered.filter(s => !statusFilter || s.status === statusFilter);
-  filtered = filtered.filter(s => capMin === '' || s.latest.market_cap_eok >= Number(capMin));
-  filtered = filtered.filter(s => capMax === '' || s.latest.market_cap_eok <= Number(capMax));
-  filtered.sort((a,b)=>{
-    let av=a[sortKey], bv=b[sortKey];
-    if(sortKey==='market_cap_eok'){ av=a.latest.market_cap_eok; bv=b.latest.market_cap_eok; }
-    if(av<bv) return -1*sortDir; if(av>bv) return 1*sortDir; return 0;
+/* ---------- 필터 적용 ---------- */
+function num(v){ return v==='' || v==null ? null : Number(v); }
+function profitOk(mode, years, field){
+  const val = y => y.d[field];
+  if(!years.length || val(years[0])==null) return null;
+  if(mode==='last') return val(years[0])>0;
+  if(mode==='loss') return val(years[0])<=0;
+  if(mode==='all3'){ const y3=years.slice(0,3); return y3.length>=3 && y3.every(y=>val(y)!=null && val(y)>0); }
+  return true;
+}
+function finPass(s, f, basis){
+  const inc = !!f.incNoData, fin = s.fin;
+  if(f.opMode){ const r = fin ? profitOk(f.opMode, fin.years, 'operating_profit') : null; if(r===null ? !inc : !r) return false; }
+  if(f.niMode){ const r = fin ? profitOk(f.niMode, fin.years, 'net_income') : null; if(r===null ? !inc : !r) return false; }
+  const opm=num(f.opmMin); if(opm!=null){ if(!fin||fin.opm==null){ if(!inc) return false; } else if(fin.opm<opm) return false; }
+  const gr=num(f.growthMin); if(gr!=null){ if(!fin||fin.growth==null){ if(!inc) return false; } else if(fin.growth<gr) return false; }
+  const dm=num(f.debtMax); if(dm!=null){ if(!fin||fin.eq==null||fin.liab==null){ if(!inc) return false; } else if(fin.debt==null||fin.debt>dm) return false; }
+  const pm=num(f.pbrMax); if(pm!=null){ if(!fin||fin.eq==null||basis(s)==null){ if(!inc) return false; } else { const p=pbrOf(s,basis); if(p==null||p>pm) return false; } }
+  const em=num(f.perMax); if(em!=null){ if(!fin||fin.ni==null||basis(s)==null){ if(!inc) return false; } else { const p=perOf(s,basis); if(p==null||p>em) return false; } }
+  if(f.impair){
+    if(!fin||fin.impair==null){ if(!inc) return false; }
+    else if(fin.impair==='full') return false;
+    else if(f.impair==='any' && fin.impair==='part') return false;
+  }
+  return true;
+}
+function applyFilters(view){
+  const v = VIEWS[view], f = viewState[view].f;
+  const q = (f.q||'').trim().toLowerCase();
+  const capMin=num(f.capMin), capMax=num(f.capMax), haltMin=num(f.haltMin), streakMin=num(f.streakMin);
+  return stocks.filter(v.base).filter(s=>{
+    if(q && !s.n.toLowerCase().includes(q) && !s.c.toLowerCase().includes(q)) return false;
+    if(f.market && s.m!==f.market) return false;
+    if(f.industry && s.i!==f.industry) return false;
+    if(capMin!=null && !(s.latest>=capMin)) return false;
+    if(capMax!=null && !(s.latest<=capMax)) return false;
+    if(haltMin!=null && s.haltDays<haltMin) return false;
+    if(streakMin!=null && s.streak<streakMin) return false;
+    if(f.status && s.status!==f.status) return false;
+    if(f.onlyNew && !s.newOnly) return false;
+    if(v.finFilters && !finPass(s,f,v.basis)) return false;
+    return true;
   });
-  document.getElementById('stockBody').innerHTML = filtered.map(s=>`
-    <tr data-code="${s.code}" class="${s.code===selectedCode?'selected':''}">
-      <td><span class="mkt-pill ${s.market.toLowerCase()}">${s.market}</span></td><td>${s.name}</td><td class="num">${s.code}</td>
-      <td>${s.industry || '-'}</td>
-      <td class="num">${Math.round(s.latest.market_cap_eok).toLocaleString()}</td>
-      <td class="num">${s.streak}</td><td>${badgeHtml(s)}</td>
-    </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--ink-mute);">결과 없음</td></tr>';
-  document.querySelectorAll('#stockBody tr[data-code]').forEach(tr=> tr.addEventListener('click', ()=> openDetail(tr.getAttribute('data-code'))));
 }
 
-function eokFromWon(won){ return won==null ? null : Math.round(won/100000000); }
-
-function pctOf(numerator, denominator){
-  if(numerator==null || denominator==null || denominator===0) return null;
-  return Math.round((numerator/denominator)*1000)/10; // 소수 1자리
+/* ---------- 렌더 ---------- */
+function renderNav(){
+  document.getElementById('nav').innerHTML = VIEW_KEYS.map(k=>`<a href="#${k}" data-view="${k}" class="${k===currentView?'active':''}">${esc(VIEWS[k].nav)}<small>${esc(VIEWS[k].sub)}</small></a>`).join('');
+}
+function renderFilters(){
+  const v = VIEWS[currentView], st = viewState[currentView];
+  const industries = [...new Set(stocks.map(s=>s.i).filter(Boolean))].sort();
+  const ctl = d => {
+    const val = st.f[d.id];
+    if(d.type==='check') return `<div class="field check"><input type="checkbox" id="f_${d.id}" data-f="${d.id}" ${val?'checked':''}><label for="f_${d.id}">${esc(d.label)}</label></div>`;
+    if(d.type==='select'){
+      const opts = d.opts==='industry' ? [['','전체'],...industries.map(i=>[i,i])] : d.opts;
+      return `<div class="field"><label>${esc(d.label)}</label><select data-f="${d.id}">${opts.map(([a,b])=>`<option value="${esc(a)}" ${a===(val||'')?'selected':''}>${esc(b)}</option>`).join('')}</select></div>`;
+    }
+    return `<div class="field"><label>${esc(d.label)}</label><input type="${d.type}" data-f="${d.id}" value="${esc(val||'')}" placeholder="${esc(d.ph||'')}"></div>`;
+  };
+  const baseDefs = v.filters;
+  let html = `<div class="controls-row">${baseDefs.map(ctl).join('')}<button class="secondary" id="resetBtn">필터 초기화</button><button id="reloadBtn">데이터 새로고침</button></div>`;
+  if(v.finFilters) html += `<div class="fin-group"><div class="glabel">재무 필터 (최근 사업연도 기준, 임계값은 직접 입력)</div><div class="controls-row">${FIN_FILTERS.map(ctl).join('')}</div></div>`;
+  document.getElementById('filterArea').innerHTML = html;
+  document.querySelectorAll('#filterArea [data-f]').forEach(el=>{
+    const evt = el.tagName==='SELECT' || el.type==='checkbox' ? 'change' : 'input';
+    el.addEventListener(evt, ()=>{
+      st.f[el.dataset.f] = el.type==='checkbox' ? el.checked : el.value;
+      shown = PAGE_SIZE; renderResults();
+    });
+  });
+  document.getElementById('resetBtn').addEventListener('click', ()=>{ st.f = {...v.defaults}; shown=PAGE_SIZE; renderFilters(); renderResults(); });
+  document.getElementById('reloadBtn').addEventListener('click', loadData);
+}
+function renderHeader(){
+  const v = VIEWS[currentView];
+  document.getElementById('viewTitle').textContent = v.title;
+  document.getElementById('viewDesc').textContent = v.desc;
+  const note = v.note.replace('{N}', dates.length);
+  document.getElementById('viewNote').textContent = note;
+  document.title = v.nav + ' · 상장사 시가총액 Dashboard';
+}
+function renderStats(){
+  const v = VIEWS[currentView];
+  const list = stocks.filter(v.base);
+  document.getElementById('statsRow').innerHTML = v.stats(list).map(([l,n,c])=>`<div class="stat ${c||''}"><div class="num">${n.toLocaleString()}</div><div class="lbl">${esc(l)}</div></div>`).join('');
+  document.getElementById('statsRow').style.display = 'grid';
+}
+function renderResults(){
+  const v = VIEWS[currentView], st = viewState[currentView];
+  const cols = colsFor(currentView);
+  const sc = cols.find(c=>c.key===st.sortKey) || cols[0];
+  let list = applyFilters(currentView);
+  list.sort((a,b)=>{
+    const av=sc.get(a), bv=sc.get(b);
+    const an = av==null || av==='', bn = bv==null || bv==='';
+    if(an && bn) return 0; if(an) return 1; if(bn) return -1;
+    const r = typeof av==='string' ? av.localeCompare(bv,'ko') : av-bv;
+    return r*st.sortDir;
+  });
+  document.getElementById('stockHead').innerHTML = '<tr>' + cols.map(c=>`<th data-key="${c.key}" class="${c.num?'num':''} ${c.sticky?'sticky':''}">${esc(c.label)}${c.key===st.sortKey?`<span class="arr">${st.sortDir>0?'▲':'▼'}</span>`:''}</th>`).join('') + '</tr>';
+  const page = list.slice(0, shown);
+  document.getElementById('stockBody').innerHTML = page.map(s=>`<tr data-code="${esc(s.c)}" class="${s.c===selectedCode?'selected':''}">${cols.map(c=>{
+    const cls = [c.num?'num':'', c.sticky?'sticky':'', c.cls?c.cls(s):''].join(' ').trim();
+    return `<td class="${cls}">${c.cell(s)}</td>`;
+  }).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" style="text-align:center;padding:20px;color:var(--ink-mute);">결과 없음</td></tr>`;
+  document.getElementById('tblCount').textContent = `${list.length.toLocaleString()}개 종목` + (list.length>shown ? ` (상위 ${shown.toLocaleString()}개 표시)` : '');
+  document.getElementById('moreWrap').style.display = list.length>shown ? 'block' : 'none';
+  document.querySelectorAll('#stockHead th').forEach(th=>th.addEventListener('click', ()=>{
+    const k = th.dataset.key;
+    if(st.sortKey===k) st.sortDir*=-1; else { st.sortKey=k; st.sortDir = ['name','mkt','ind','code'].includes(k)?1:-1; }
+    renderResults();
+  }));
+  document.querySelectorAll('#stockBody tr[data-code]').forEach(tr=>tr.addEventListener('click', ()=>openDetail(tr.dataset.code)));
+  document.getElementById('tablePanel').style.display = 'block';
+  document.getElementById('emptyState').style.display = 'none';
+}
+function renderView(){
+  renderNav(); renderHeader(); renderFilters(); renderStats(); renderResults();
 }
 
-function renderFinancials(code){
+/* ---------- 상세 패널 ---------- */
+function renderFinancials(s){
   const panel = document.getElementById('financialsPanel');
-  const data = financialsMap[code];
+  const data = financialsMap[s.c];
   if(!data || !Object.keys(data).length){
     panel.innerHTML = '<div class="note" style="margin-top:12px;">재무정보 없음 (DART 공시 미확인 종목이거나 아직 수집되지 않음)</div>';
     return;
   }
   const years = Object.keys(data).sort((a,b)=>b.localeCompare(a)).slice(0,3).reverse();
+  const pct = (n,d)=> n==null||d==null||d===0 ? null : Math.round((n/d)*1000)/10;
   const rows = [
-    { label:'매출액', unit:'eok', calc:d=>eokFromWon(d.revenue) },
-    { label:'영업이익', unit:'eok', calc:d=>eokFromWon(d.operating_profit) },
-    { label:'영업이익률', unit:'pct', ratio:true, calc:d=>pctOf(d.operating_profit, d.revenue) },
-    { label:'당기순이익', unit:'eok', calc:d=>eokFromWon(d.net_income) },
-    { label:'당기순이익률', unit:'pct', ratio:true, calc:d=>pctOf(d.net_income, d.revenue) },
-    { label:'자산총계', unit:'eok', calc:d=>eokFromWon(d.assets) },
-    { label:'부채총계', unit:'eok', calc:d=>eokFromWon(d.liabilities) },
-    { label:'자본총계', unit:'eok', calc:d=>eokFromWon(d.equity) },
-    { label:'부채비율', unit:'pct', ratio:true, calc:d=>pctOf(d.liabilities, d.equity) },
+    {label:'매출액', unit:'eok', calc:d=>d.revenue==null?null:Math.round(d.revenue/1e8)},
+    {label:'영업이익', unit:'eok', calc:d=>d.operating_profit==null?null:Math.round(d.operating_profit/1e8)},
+    {label:'영업이익률', unit:'pct', ratio:true, calc:d=>pct(d.operating_profit,d.revenue)},
+    {label:'당기순이익', unit:'eok', calc:d=>d.net_income==null?null:Math.round(d.net_income/1e8)},
+    {label:'당기순이익률', unit:'pct', ratio:true, calc:d=>pct(d.net_income,d.revenue)},
+    {label:'자산총계', unit:'eok', calc:d=>d.assets==null?null:Math.round(d.assets/1e8)},
+    {label:'부채총계', unit:'eok', calc:d=>d.liabilities==null?null:Math.round(d.liabilities/1e8)},
+    {label:'자본금', unit:'eok', calc:d=>d.capital==null?null:Math.round(d.capital/1e8)},
+    {label:'자본총계', unit:'eok', calc:d=>d.equity==null?null:Math.round(d.equity/1e8)},
+    {label:'부채비율', unit:'pct', ratio:true, calc:d=>d.equity>0?pct(d.liabilities,d.equity):null},
   ];
   panel.innerHTML = `
-    <h2 style="margin-top:16px;">연도별 재무정보 (억원, 주재무제표)</h2>
+    <h3 class="ph" style="margin-top:16px;">연도별 재무정보 (억원, 주재무제표)</h3>
     <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
-      <thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--line-strong);"></th>
-        ${years.map(y=>`<th class="num" style="padding:6px 8px;border-bottom:2px solid var(--line-strong);">${y}(${data[y].fs_div==='CFS'?'연결':'별도'})</th>`).join('')}
+      <thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--line-strong);background:#fff;color:var(--ink);position:static;"></th>
+        ${years.map(y=>`<th class="num" style="padding:6px 8px;border-bottom:2px solid var(--line-strong);background:#fff;color:var(--ink);position:static;">${y}(${data[y].fs_div==='CFS'?'연결':'별도'})</th>`).join('')}
       </tr></thead>
-      <tbody>
-        ${rows.map(row=>`
-          <tr><td style="padding:5px 8px;color:var(--ink-soft);${row.ratio?'font-style:italic;':''}">${row.label}</td>
-            ${years.map(y=>{
-              const v = row.calc(data[y] || {});
-              const text = v==null ? '-' : (row.unit==='pct' ? v.toFixed(1)+'%' : v.toLocaleString());
-              const style = `padding:5px 8px;${row.ratio?'font-style:italic;':''}${v<0?'color:#d32f2f;font-weight:700;':''}`;
-              return `<td class="num" style="${style}">${text}</td>`;
-            }).join('')}
-          </tr>`).join('')}
-      </tbody>
+      <tbody>${rows.map(row=>`<tr><td style="padding:5px 8px;color:var(--ink-soft);${row.ratio?'font-style:italic;':''}">${row.label}</td>
+        ${years.map(y=>{
+          const v = row.calc(data[y]||{});
+          const text = v==null ? '-' : (row.unit==='pct' ? v.toFixed(1)+'%' : v.toLocaleString());
+          return `<td class="num" style="padding:5px 8px;${row.ratio?'font-style:italic;':''}${v<0?'color:#d32f2f;font-weight:700;':''}">${text}</td>`;
+        }).join('')}</tr>`).join('')}</tbody>
     </table>
-    <div class="note">출처: OpenDART 사업보고서 주요계정 (연결 우선, 없으면 별도)</div>`;
+    <div class="note">출처: OpenDART 사업보고서 주요계정 (연결 우선, 없으면 별도). 재무는 연 1회 갱신되는 사업보고서 기준이며 최신 분기 실적은 반영하지 않습니다.</div>`;
 }
-
+function loadDisclosures(){
+  if(!disclosuresPromise){
+    disclosuresPromise = fetch(DISCLOSURES_URL + '?t=' + Date.now()).then(r=>r.ok?r.json():{}).catch(()=>({})).then(d=>{ disclosuresMap = d; return d; });
+  }
+  return disclosuresPromise;
+}
 function renderDisclosures(code){
   const panel = document.getElementById('disclosuresPanel');
-  const reports = (disclosuresMap[code] || {}).reports;
-  if(!reports || !reports.length){
-    panel.innerHTML = '<div class="note" style="margin-top:12px;">최근 주요사항보고 없음</div>';
-    return;
-  }
-  panel.innerHTML = `
-    <h2 style="margin-top:16px;">최근 주요사항보고 (DART)</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
-      <thead><tr>
-        <th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--line-strong);width:90px;">날짜</th>
-        <th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--line-strong);">보고서명</th>
-      </tr></thead>
-      <tbody>
-        ${reports.map(r=>`
-          <tr>
-            <td style="padding:5px 8px;font-family:var(--mono);color:var(--ink-soft);">${formatDate(r.date)}</td>
-            <td style="padding:5px 8px;">
-              <a href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${r.rcept_no}" target="_blank" rel="noopener" style="color:var(--navy);">${r.report_nm}</a>
-            </td>
-          </tr>`).join('')}
-      </tbody>
-    </table>
-    <div class="note">출처: OpenDART 공시검색 (주요사항보고)</div>`;
+  panel.innerHTML = '<div class="note" style="margin-top:12px;">공시 불러오는 중...</div>';
+  loadDisclosures().then(()=>{
+    if(selectedCode!==code) return;
+    const reports = (disclosuresMap[code]||{}).reports;
+    if(!reports || !reports.length){ panel.innerHTML = '<div class="note" style="margin-top:12px;">최근 주요사항보고 없음</div>'; return; }
+    panel.innerHTML = `
+      <h3 class="ph" style="margin-top:16px;">최근 주요사항보고 (DART)</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+        <thead><tr>
+          <th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--line-strong);width:90px;background:#fff;color:var(--ink);position:static;">날짜</th>
+          <th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--line-strong);background:#fff;color:var(--ink);position:static;">보고서명</th>
+        </tr></thead>
+        <tbody>${reports.map(r=>`<tr>
+          <td style="padding:5px 8px;font-family:var(--mono);color:var(--ink-soft);">${formatDate(r.date)}</td>
+          <td style="padding:5px 8px;"><a href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${encodeURIComponent(r.rcept_no)}" target="_blank" rel="noopener" style="color:var(--navy);">${esc(r.report_nm)}</a></td>
+        </tr>`).join('')}</tbody>
+      </table>
+      <div class="note">출처: OpenDART 공시검색 (주요사항보고)</div>`;
+  });
 }
-
 function openDetail(code){
-  selectedCode = code; const s = bySymbol[code]; if(!s) return;
+  const s = bySymbol[code]; if(!s) return;
+  selectedCode = code;
+  const tCur = thr(s.m,'current'), tNext = thr(s.m,'next');
   document.getElementById('detail').classList.add('open');
-  document.getElementById('detailName').textContent = `${s.name} (${s.code})`;
-  document.getElementById('detailSub').textContent = `${s.market}${s.industry ? ' · '+s.industry : ''} · 기준 ${s.threshold.toLocaleString()}억원 · 연속미달 ${s.streak}거래일`;
-  const labels = s.history.map(h=>h.date), data = s.history.map(h=>h.market_cap_eok), th = s.history.map(()=>s.threshold);
+  document.getElementById('detailName').textContent = `${s.n} (${s.c})`;
+  document.getElementById('detailSub').textContent = `${s.m}${s.i?' · '+s.i:''} · 현행 ${tCur.toLocaleString()}억 / 신규 ${tNext.toLocaleString()}억 · 연속미달 ${s.streak}거래일${s.halted?' · 거래정지':''}`;
   if(chartObj) chartObj.destroy();
   chartObj = new Chart(document.getElementById('trendChart'), {
     type:'line',
-    data:{ labels, datasets:[
-      {label:'시가총액', data, borderColor:'#1f2b3d', backgroundColor:'rgba(31,43,61,0.08)', fill:true, borderWidth:2, pointRadius: labels.length>60?0:2, tension:0.15},
-      {label:'기준선', data:th, borderColor:'#c0392b', borderWidth:1.5, borderDash:[6,4], pointRadius:0, fill:false}
+    data:{ labels:dates, datasets:[
+      {label:'시가총액', data:s.cap, borderColor:'#1f2b3d', backgroundColor:'rgba(31,43,61,0.08)', fill:true, borderWidth:2, pointRadius:dates.length>60?0:2, tension:0.15, spanGaps:true},
+      {label:'현행 기준선', data:dates.map(()=>tCur), borderColor:'#c0392b', borderWidth:1.5, borderDash:[6,4], pointRadius:0, fill:false},
+      {label:'신규 기준선', data:dates.map(()=>tNext), borderColor:'#d68910', borderWidth:1.5, borderDash:[2,3], pointRadius:0, fill:false},
     ]},
     options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>c.dataset.label+': '+Number(c.parsed.y).toLocaleString()+'억원'}}},
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>c.dataset.label+': '+Number(c.parsed.y).toLocaleString()+'억원'}}},
       scales:{ x:{ticks:{maxTicksLimit:10,font:{size:10}},grid:{display:false}}, y:{ticks:{font:{size:10}},grid:{color:'#e3e5e1'}} } }
   });
-  renderFinancials(code);
+  document.getElementById('chartLegend').innerHTML = `<span><i style="background:#1f2b3d;"></i>시가총액(억원)</span><span><i style="background:#c0392b;"></i>현행 기준선 ${tCur.toLocaleString()}억</span><span><i style="background:#d68910;"></i>신규 기준선 ${tNext.toLocaleString()}억 (${REG.next.effective.replace('-','.')}~)</span>`;
+  renderFinancials(s);
   renderDisclosures(code);
-  renderTable(Object.values(bySymbol));
+  document.querySelectorAll('#stockBody tr[data-code]').forEach(tr=>tr.classList.toggle('selected', tr.dataset.code===code));
+  document.getElementById('detail').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+function closeDetail(){
+  document.getElementById('detail').classList.remove('open');
+  selectedCode = null;
+  document.querySelectorAll('#stockBody tr.selected').forEach(tr=>tr.classList.remove('selected'));
 }
 
-document.getElementById('closeDetail').addEventListener('click', ()=>{ document.getElementById('detail').classList.remove('open'); selectedCode=null; renderTable(Object.values(bySymbol)); });
-document.querySelectorAll('#stockTable thead th').forEach(th=>{
-  th.addEventListener('click', ()=>{
-    const key = th.getAttribute('data-key');
-    if(sortKey===key) sortDir*=-1; else { sortKey=key; sortDir = ['name','market','code'].includes(key)?1:-1; }
-    renderTable(Object.values(bySymbol));
-  });
-});
-document.getElementById('searchBox').addEventListener('input', ()=> renderTable(Object.values(bySymbol)));
-['thDays','marketFilter','industryFilter','statusFilter','capMin','capMax'].forEach(id=>{
-  document.getElementById(id).addEventListener('change', ()=> renderTable(Object.values(bySymbol)));
-});
+/* ---------- 라우팅/로딩 ---------- */
+function routeFromHash(){
+  const k = location.hash.replace('#','');
+  const next = VIEWS[k] ? k : 'all';
+  if(next!==currentView){ currentView = next; shown = PAGE_SIZE; closeDetail(); }
+  if(stocks.length) renderView();
+}
+window.addEventListener('hashchange', routeFromHash);
+document.getElementById('closeDetail').addEventListener('click', closeDetail);
+document.getElementById('moreBtn').addEventListener('click', ()=>{ shown += PAGE_SIZE; renderResults(); });
 
 function loadData(){
   document.getElementById('asofLabel').textContent = '불러오는 중...';
   Promise.all([
-    fetch(DATA_URL + '?t=' + Date.now()).then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
-    fetch(INDUSTRY_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : {}).catch(() => ({})),
-    fetch(FINANCIALS_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : {}).catch(() => ({})),
-    fetch(DISCLOSURES_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : {}).catch(() => ({})),
-  ])
-    .then(([data, industry, financials, disclosures]) => { records = data; industryMap = industry; financialsMap = financials; disclosuresMap = disclosures; rebuild(); })
-    .catch(err => {
-      document.getElementById('emptyState').textContent = '데이터 로드 실패: ' + err.message + ' (collect.py를 먼저 실행했는지 확인하세요)';
-      document.getElementById('emptyState').style.display = 'block';
-      document.getElementById('asofLabel').textContent = '로드 실패';
-    });
+    fetch(SUMMARY_URL + '?t=' + Date.now()).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }),
+    fetch(FINANCIALS_URL + '?t=' + Date.now()).then(r=>r.ok?r.json():{}).catch(()=>({})),
+  ]).then(([summary, financials])=>{
+    dates = summary.dates; stocks = summary.stocks; financialsMap = financials;
+    bySymbol = {};
+    stocks.forEach(s=>{ computeStock(s); bySymbol[s.c] = s; });
+    document.getElementById('asofLabel').textContent = '최신: ' + formatDate(summary.asof) + ' · ' + dates.length + ' 거래일(누적)';
+    disclosuresPromise = null;
+    renderView();
+    if(selectedCode) openDetail(selectedCode);
+  }).catch(err=>{
+    document.getElementById('emptyState').textContent = '데이터 로드 실패: ' + err.message + ' (build_summary.py를 먼저 실행했는지 확인하세요)';
+    document.getElementById('emptyState').style.display = 'block';
+    document.getElementById('asofLabel').textContent = '로드 실패';
+  });
 }
 
-document.getElementById('searchBtn').addEventListener('click', loadData);
-document.getElementById('resetBtn').addEventListener('click', () => {
-  document.getElementById('searchBox').value = '';
-  document.getElementById('thDays').value = '0';
-  document.getElementById('marketFilter').value = '';
-  document.getElementById('industryFilter').value = '';
-  document.getElementById('statusFilter').value = '';
-  document.getElementById('capMin').value = '';
-  document.getElementById('capMax').value = '';
-  loadData();
-});
+currentView = VIEWS[location.hash.replace('#','')] ? location.hash.replace('#','') : 'all';
+renderNav(); renderHeader();
 loadData();
 setInterval(loadData, AUTO_REFRESH_MS);
 </script>

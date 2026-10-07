@@ -35,6 +35,9 @@ jobs:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
         run: python disclosures.py update
 
+      - name: Build dashboard summary
+        run: python build_summary.py
+
       - name: Commit and push if changed
         run: |
           git config user.name "github-actions[bot]"
