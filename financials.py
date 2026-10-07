@@ -16,7 +16,9 @@ data/financials.json:   화면용 요약. { 종목코드: { 사업연도: {reven
                                                          assets, liabilities, equity, capital, fs_div} } }
 
 사용법
-  python financials.py update [--years N]   dart_accounts.json에 없는 종목만 조회한 뒤 financials.json 갱신
+  python financials.py update [--years N] [--allow-single]
+                                            dart_accounts.json에 없는 종목만 다중 조회한 뒤 financials.json 갱신.
+                                            먼저 다중 조회 가능 여부를 점검하고, 불가하면 건너뛴다(--allow-single이면 단일 조회로 진행)
   python financials.py rebuild [--years N]  API 호출 없이 dart_accounts.json으로 financials.json만 다시 생성
 """
 import io
@@ -39,6 +41,8 @@ ACCOUNTS_PATH = BASE_DIR / "data" / "dart_accounts.json"
 
 API_BASE = "https://opendart.fss.or.kr/api"
 BATCH_SIZE = 100
+MIN_SPLIT = 10      # 다중 조회가 실패하면 이 크기까지 절반씩 나눠 재시도
+MAX_FALLBACK = 200  # 단일 조회 대체는 실행당 최대 건수(초과하면 건너뛰고 경고)
 AMOUNT_KEYS = ("thstrm_amount", "frmtrm_amount", "bfefrmtrm_amount")  # 당기, 전기, 전전기
 MAX_YEARS = len(AMOUNT_KEYS)
 
@@ -127,7 +131,7 @@ def fetch_multi_rows(key, corp_codes, year):
     resp = requests.get(
         API_BASE + "/fnlttMultiAcnt.json",
         params={"crtfc_key": key, "corp_code": ",".join(corp_codes), "bsns_year": year, "reprt_code": "11011"},
-        timeout=60,
+        timeout=120,
     )
     data = resp.json()
     status = data.get("status")
@@ -207,7 +211,54 @@ def rebuild_financials(raw, years, latest):
     return financials, updated
 
 
-def update(codes, years, key):
+def log(message):
+    print(message, flush=True)
+
+
+def collect_batch(key, corp_codes, year, stats):
+    """다중 조회. 실패하면 절반으로 나눠 다시 시도하고, MIN_SPLIT개 이하에서도 실패한 corp_code는 돌려준다."""
+    started = time.time()
+    try:
+        rows = fetch_multi_rows(key, corp_codes, year)
+        stats["calls"] += 1
+        log(f"[financials] 다중 조회 {len(corp_codes)}개: {len(rows)}행, {time.time() - started:.1f}초")
+        return rows, []
+    except Exception as e:
+        log(f"[financials] 다중 조회 실패 {len(corp_codes)}개 ({time.time() - started:.1f}초): {e}")
+        if len(corp_codes) <= MIN_SPLIT:
+            return [], list(corp_codes)
+        mid = len(corp_codes) // 2
+        rows1, failed1 = collect_batch(key, corp_codes[:mid], year, stats)
+        rows2, failed2 = collect_batch(key, corp_codes[mid:], year, stats)
+        return rows1 + rows2, failed1 + failed2
+
+
+def check_multi_supported(key, pending, corp_map, corp_to_stock, year):
+    """다중 조회가 되는지 소량(최대 10개)으로 먼저 확인한다. 응답 형식도 같이 확인한다."""
+    sample = pending[:10]
+    started = time.time()
+    try:
+        rows = fetch_multi_rows(key, [corp_map[c] for c in sample], year)
+    except Exception as e:
+        log(f"[financials] 사전 점검 실패: 다중 조회 호출 오류 ({time.time() - started:.1f}초): {e}")
+        return False
+    if not rows:
+        log(f"[financials] 사전 점검 실패: 표본 {len(sample)}개에서 응답 행이 없습니다. ({time.time() - started:.1f}초)")
+        return False
+    need = {"account_nm", "fs_div", "thstrm_amount", "frmtrm_amount", "bfefrmtrm_amount"}
+    missing = need - set(rows[0].keys())
+    if missing:
+        log(f"[financials] 사전 점검 실패: 응답에 필드가 없습니다 {sorted(missing)} (있는 필드: {sorted(rows[0].keys())})")
+        return False
+    matched = add_rows({}, rows, corp_to_stock, year)
+    if not matched:
+        log(f"[financials] 사전 점검 실패: 종목코드 매칭 불가 (corp_code/stock_code 확인 필요, 있는 필드: {sorted(rows[0].keys())})")
+        return False
+    log(f"[financials] 사전 점검 통과: 표본 {len(sample)}개 중 {len(matched)}개 매칭, {len(rows)}행, {time.time() - started:.1f}초")
+    return True
+
+
+def update(codes, years, key, allow_single=False):
     years = min(years, MAX_YEARS)
     corp_map = get_corp_code_map(key)
     corp_to_stock = {v: k for k, v in corp_map.items()}
@@ -216,8 +267,10 @@ def update(codes, years, key):
     listed = [c for c in dict.fromkeys(codes) if corp_map.get(c)]
     no_corp_code = len(set(codes)) - len(listed)
 
-    calls = 0
-    fallback = 0
+    stats = {"calls": 0, "fallback": 0, "skipped": 0}
+    multi_checked = False
+    use_multi = True
+    max_fallback = 10 ** 9 if allow_single else MAX_FALLBACK
     for report_year in (latest, latest - 1):
         if report_year == latest:
             pending = [c for c in listed if str(latest) not in raw.get(c, {})]
@@ -225,33 +278,48 @@ def update(codes, years, key):
             pending = [c for c in listed if str(latest) not in raw.get(c, {}) and str(report_year) not in raw.get(c, {})]
         if not pending:
             continue
+        if not multi_checked:
+            multi_checked = True
+            use_multi = check_multi_supported(key, pending, corp_map, corp_to_stock, report_year)
+            if not use_multi:
+                if not allow_single:
+                    log("[financials] 다중 조회를 쓸 수 없어 이번 재무 수집을 건너뜁니다. "
+                        "단일 조회(느림)로 진행하려면 --allow-single 옵션을 지정하세요.")
+                    return
+                log("[financials] --allow-single 지정: 다중 조회 없이 단일 조회로 진행합니다.")
         matched_total = 0
+        log(f"[financials] {report_year} 보고서 조회 시작: 대상 {len(pending)}개")
         for i in range(0, len(pending), BATCH_SIZE):
             batch = pending[i:i + BATCH_SIZE]
-            try:
-                rows = fetch_multi_rows(key, [corp_map[c] for c in batch], report_year)
-                calls += 1
-                matched_total += len(add_rows(raw, rows, corp_to_stock, report_year))
-            except Exception as e:
-                print(f"[financials] 다중 조회 실패({report_year}, {len(batch)}개): {e} -> 단일 조회로 대체")
-                for c in batch:
-                    try:
-                        rows = fetch_single_rows(key, corp_map[c], report_year)
-                        fallback += 1
-                        matched_total += len(add_rows(raw, rows, corp_to_stock, report_year, force_code=c))
-                    except Exception as e2:
-                        print(f"[financials] {c} {report_year} 오류: {e2}")
-                    time.sleep(0.15)
+            if use_multi:
+                rows, failed = collect_batch(key, [corp_map[c] for c in batch], report_year, stats)
+            else:
+                rows, failed = [], [corp_map[c] for c in batch]
+            matched_total += len(add_rows(raw, rows, corp_to_stock, report_year))
+            for corp_code in failed:
+                if stats["fallback"] >= max_fallback:
+                    stats["skipped"] += 1
+                    continue
+                code = corp_to_stock.get(corp_code)
+                try:
+                    rows = fetch_single_rows(key, corp_code, report_year)
+                    stats["fallback"] += 1
+                    matched_total += len(add_rows(raw, rows, corp_to_stock, report_year, force_code=code))
+                except Exception as e:
+                    log(f"[financials] {code} {report_year} 단일 조회 오류: {e}")
+                time.sleep(0.15)
             time.sleep(0.3)
-        print(f"[financials] {report_year} 보고서: 대상 {len(pending)}개 중 {matched_total}개 확보")
+        log(f"[financials] {report_year} 보고서: 대상 {len(pending)}개 중 {matched_total}개 확보")
         if len(pending) >= 200 and matched_total < len(pending) * 0.5:
-            print("[financials] 경고: 확보율이 낮습니다. 다중 조회 응답 형식(corp_code/stock_code/fs_div)을 확인하세요.")
+            log("[financials] 경고: 확보율이 낮습니다. 다중 조회 응답 형식(corp_code/stock_code/fs_div)이나 실패 로그를 확인하세요.")
         save_json(ACCOUNTS_PATH, raw)
 
     save_json(ACCOUNTS_PATH, raw)
     financials, updated = rebuild_financials(raw, years, latest)
-    print(f"[financials] 완료: 다중 호출 {calls}회, 단일 대체 호출 {fallback}회, corp_code 없음 {no_corp_code}개 종목, "
-          f"재무 보유 {len(financials)}개 종목 ({updated}개 연도 항목 갱신)")
+    if stats["skipped"]:
+        log(f"[financials] 경고: 단일 조회 상한({MAX_FALLBACK}건) 초과로 {stats['skipped']}개 종목을 건너뛰었습니다.")
+    log(f"[financials] 완료: 다중 호출 {stats['calls']}회, 단일 대체 호출 {stats['fallback']}회, corp_code 없음 {no_corp_code}개 종목, "
+        f"재무 보유 {len(financials)}개 종목 ({updated}개 연도 항목 갱신)")
 
 
 if __name__ == "__main__":
@@ -276,7 +344,7 @@ if __name__ == "__main__":
             print("data/history.json이 없습니다. 먼저 collect.py를 실행하세요.")
             sys.exit(1)
         history = json.load(open(HISTORY_PATH, encoding="utf-8"))
-        update(sorted({r["code"] for r in history}), years, key)
+        update(sorted({r["code"] for r in history}), years, key, allow_single="--allow-single" in sys.argv)
     else:
         print(__doc__)
         sys.exit(1)
