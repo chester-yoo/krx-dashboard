@@ -165,7 +165,7 @@
   .dr-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:16px 20px 12px;border-bottom:1px solid var(--line);}
   .dr-head h3{margin:0;font-size:16px;color:var(--navy);}
   .dr-head .sub{color:var(--ink-soft);font-size:12.5px;margin-top:2px;}
-  .dr-close{background:#fff;color:var(--ink-soft);border:1px solid var(--line-strong);padding:6px 12px;}
+  .dr-close{background:#fff;color:var(--ink-soft);border:1px solid var(--line-strong);padding:6px 12px;white-space:nowrap;flex-shrink:0;}
   .dr-body{overflow:auto;padding:14px 20px 28px;}
   .dr-body h4{font-size:12.5px;color:var(--ink-soft);margin:18px 0 8px;font-weight:700;}
   .legend{display:flex;gap:14px;font-size:11.5px;color:var(--ink-soft);margin-top:8px;flex-wrap:wrap;}
@@ -272,6 +272,19 @@ const DANGER_DAYS = Math.ceil(REG.current.streakDays * 0.66);
 
 const RISK_REASONS = ['상장적격성 실질심사','상장폐지 사유 발생','상장폐지 절차','감사의견 관련','횡령·배임 혐의','회생·파산 절차'];
 const TECH_REASONS = ['주식 병합·분할 등(기술적 정지)'];
+// 정지 사유별 색: [막대·범례 색, 배지 바탕, 배지 글자]
+const REASON_PALETTE = {
+  '상장적격성 실질심사': ['#b23a2a','#fbe4df','#8a2414'],
+  '상장폐지 사유 발생': ['#7d1d4f','#f7e1ec','#6a1742'],
+  '상장폐지 절차': ['#e0663a','#fde9df','#9a3a12'],
+  '회생·파산 절차': ['#8a5a2b','#f3e8dc','#6b4420'],
+  '감사의견 관련': ['#d99a1e','#fcf1d8','#7a5200'],
+  '횡령·배임 혐의': ['#5b2d8e','#ece3f6','#4a2275'],
+  '투자자 보호': ['#3f6fb5','#e5edf8','#1f4b8f'],
+  '주식 병합·분할 등(기술적 정지)': ['#8b93a0','#eef0f2','#3f4652'],
+};
+const REASON_FALLBACK = {risk:['#c2553f','#fbe7e3','#8f2a1a'], tech:['#8b93a0','#eef0f2','#3f4652'], other:['#4f74b3','#e8edf5','#1f4b8f']};
+function reasonColors(label){ return REASON_PALETTE[label] || REASON_FALLBACK[reasonGroup(label)]; }
 const STAGE_CLASS = {'관리종목 지정 우려(예고)':'g-warn','상장폐지 우려 안내':'g-risk','관리종목 지정 사유 발생':'g-risk','관리종목 지정':'g-dark','관리종목 지정 해제':'g-off'};
 
 let dates = [];
@@ -368,7 +381,8 @@ function statusBadge(s){
 function reasonCell(s){
   if(!s.reason) return '';
   const g = reasonGroup(s.reason.label);
-  return `<a class="badge r-${g}" href="${dartUrl(s.reason.rcept_no)}" target="_blank" rel="noopener" title="${esc(s.reason.report_nm)}">${esc(s.reason.label)}</a><span class="when">${formatDate(s.reason.date)}</span>`;
+  const [, bg, fg] = reasonColors(s.reason.label);
+  return `<a class="badge r-${g}" style="background:${bg};color:${fg};border-color:${bg}" href="${dartUrl(s.reason.rcept_no)}" target="_blank" rel="noopener" title="${esc(s.reason.report_nm)}">${esc(s.reason.label)}</a><span class="when">${formatDate(s.reason.date)}</span>`;
 }
 function stageCell(s){
   if(!s.stage) return '';
@@ -666,7 +680,7 @@ function renderCards(){
 function renderHaltTop(list, st, area){
   const by = {};
   list.forEach(s=>{ const k = s.reason ? s.reason.label : ''; by[k] = (by[k]||0)+1; });
-  const color = k => k==='' ? '#d5d8d2' : ({risk:'#c2553f', tech:'#8b93a0', other:'#4f74b3'})[reasonGroup(k)];
+  const color = k => k==='' ? '#d5d8d2' : reasonColors(k)[0];
   const order = {risk:0, other:1, tech:2};
   const kinds = Object.entries(by).sort((a,b)=> (a[0]==='') - (b[0]==='') || order[reasonGroup(a[0])]-order[reasonGroup(b[0])] || b[1]-a[1]);
   const total = list.length || 1, cur = st.h.reason || '';
