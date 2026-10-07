@@ -500,7 +500,7 @@ const VIEWS = {
     note:`판정 기준: 코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억 미만이 ${REG.current.streakDays}거래일 연속되면 관리종목 지정 요건에 해당하고, 지정 후 90거래일 내 45거래일 연속 미회복 시 상장폐지됩니다. "미달 단계"는 이 대시보드가 연속 미달 일수로 계산한 값이며 KRX의 실제 관리종목 지정 여부가 아닙니다. 이미 거래정지된 종목은 제외합니다. "공시 단계"는 DART 거래소공시 제목에서 관리종목 관련 공시(우려·예고, 상장폐지 우려 안내, 지정 사유 발생, 지정, 해제)를 찾은 대사용 값이며, 공시가 없으면 비워 둡니다. PBR·PER 분자는 최신 시가총액입니다.`,
   },
   new:{
-    nav:'신규 기준 사전검토', sub:`${REG.next.effective.replace('-','.')} 상향 대비`,
+    nav:'사전검토', sub:`${REG.next.effective.replace('-','.')} 상향 대비`,
     title:`신규 기준 사전검토 (${REG.next.effective.replace('-','.')})`,
     desc:`거래정지·현행 기준 미달이 아닌 종목 중, 최근 ${REG.avgDays}거래일 평균 시가총액이 신규 기준(코스피 ${REG.next.KOSPI}억 / 코스닥 ${REG.next.KOSDAQ}억) 미만인 종목`,
     filters:[...BASE_FILTERS],
@@ -942,8 +942,8 @@ function loadData(){
     dates = summary.dates; stocks = summary.stocks; financialsMap = financials;
     bySymbol = {};
     stocks.forEach(s=>{ computeStock(s); s.reason = s.halted && haltReasons[s.c] ? haltReasons[s.c].reason : null; s.stage = !s.halted && stageMap[s.c] ? stageMap[s.c].stage : null; bySymbol[s.c] = s; });
-    asofText = `기준일 ${formatDate(summary.asof)} · ${dates.length}거래일 누적`;
-    document.getElementById('sideFoot').innerHTML = `<b>${formatDate(summary.asof)}</b>데이터 기준일 · ${dates.length}거래일 누적<br>매일 오전 9시 자동 수집`;
+    asofText = `기준일 ${formatDate(summary.asof)}`;
+    document.getElementById('sideFoot').innerHTML = `<b>${formatDate(summary.asof)}</b>데이터 기준일<br>매일 오전 9시 자동 수집`;
     disclosuresPromise = null;
     renderView();
     if(selectedCode) openDetail(selectedCode);
