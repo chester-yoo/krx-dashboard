@@ -101,6 +101,66 @@ def sample(key):
     log(f"[full] 표본 완료: {len(out['companies'])}개사, 총 {out['total_sec']}초 -> {SAMPLE_PATH.name}")
 
 
+XBRL_SAMPLE_PATH = BASE_DIR / "data" / "xbrl_sample.json"
+# 소형사 위주 표본 + 비교용 대형사(삼성전자)
+XBRL_SAMPLE_CODES = ["060480", "011080", "312610", "035620", "024070", "002360", "001570", "208640", "199730", "005930"]
+DEPR_FACT = re.compile(r"<([\w\-]+):(\w*(?:Depreciation|Amortisation|Amortization)\w*)\s([^>]*?)>([^<]*)</", re.S)
+CONTEXT = re.compile(r"<(?:\w+:)?context\s+id=\"([^\"]+)\"[^>]*>(.*?)</(?:\w+:)?context>", re.S)
+MEMBER = re.compile(r"<(?:\w+:)?explicitMember[^>]*dimension=\"([^\"]+)\"[^>]*>([^<]+)<", re.S)
+PERIOD = re.compile(r"<(?:\w+:)?(startDate|endDate|instant)>([^<]+)<")
+
+
+def find_annual_report(key, corp_code, year):
+    """해당 사업연도 사업보고서의 접수번호(정정 포함 최신)."""
+    resp = requests.get(API_BASE + "/list.json", params={
+        "crtfc_key": key, "corp_code": corp_code, "bgn_de": f"{int(year) + 1}0101", "end_de": f"{int(year) + 1}1231",
+        "pblntf_ty": "A", "pblntf_detail_ty": "A001", "page_count": 10}, timeout=30)
+    data = resp.json()
+    items = [r for r in data.get("list", []) if "사업보고서" in (r.get("report_nm") or "")]
+    return items[0]["rcept_no"] if items else None
+
+
+def xbrl_sample(key):
+    """사업보고서 XBRL 원본에서 감가상각·상각 관련 사실(fact)을 모두 뽑아 저장한다(주석 태깅 범위 확인용)."""
+    import io
+    import zipfile
+    corp_map = financials.get_corp_code_map(key)
+    year = str(datetime.now().year - 1)
+    out = {"year": year, "companies": {}}
+    for code in XBRL_SAMPLE_CODES:
+        entry = {}
+        started = time.time()
+        try:
+            rcept_no = find_annual_report(key, corp_map[code], year)
+            entry["rcept_no"] = rcept_no
+            if not rcept_no:
+                entry["error"] = "사업보고서 없음"
+            else:
+                resp = requests.get(API_BASE + "/fnlttXbrl.xml", params={"crtfc_key": key, "rcept_no": rcept_no, "reprt_code": "11011"}, timeout=120)
+                entry["bytes"] = len(resp.content)
+                z = zipfile.ZipFile(io.BytesIO(resp.content))
+                entry["files"] = z.namelist()
+                text = "".join(z.read(n).decode("utf-8", "ignore") for n in z.namelist() if n.lower().endswith(".xbrl"))
+                contexts = {}
+                for cid, body in CONTEXT.findall(text):
+                    contexts[cid] = {"period": dict(PERIOD.findall(body)), "members": [m[1] for m in MEMBER.findall(body)]}
+                facts = []
+                for prefix, name, attrs, value in DEPR_FACT.findall(text):
+                    m = re.search(r'contextRef="([^"]+)"', attrs)
+                    ctx = contexts.get(m.group(1) if m else "", {})
+                    facts.append({"el": f"{prefix}:{name}", "v": value.strip(), "period": ctx.get("period"), "members": ctx.get("members")})
+                entry["facts"] = facts
+        except Exception as e:
+            entry["error"] = str(e)
+        entry["sec"] = round(time.time() - started, 2)
+        log(f"[xbrl] {code}: {entry.get('error') or str(len(entry.get('facts', []))) + '개 감가상각 관련 항목'} ({entry['sec']}초, {entry.get('bytes', 0)//1024}KB)")
+        out["companies"][code] = entry
+        time.sleep(0.3)
+    with open(XBRL_SAMPLE_PATH, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    log(f"[xbrl] 표본 완료 -> {XBRL_SAMPLE_PATH.name}")
+
+
 def to_number(v):
     if v is None or v == "":
         return None
@@ -189,6 +249,8 @@ if __name__ == "__main__":
         sample(key)
     elif cmd == "full":
         full(key)
+    elif cmd == "xbrl_sample":
+        xbrl_sample(key)
     else:
         print(__doc__)
         sys.exit(1)
