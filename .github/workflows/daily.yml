@@ -11,6 +11,8 @@ permissions:
 jobs:
   collect:
     runs-on: ubuntu-latest
+    env:
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +39,16 @@ jobs:
 
       - name: Build dashboard summary
         run: python build_summary.py
+
+      - name: Update halt reasons (OpenDART exchange disclosures)
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        run: python halt_reasons.py update
+
+      - name: Update designation stage (OpenDART exchange disclosures)
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        run: python designation_stage.py update
 
       - name: Commit and push if changed
         run: |
