@@ -155,6 +155,7 @@ const SUMMARY_URL = 'data/summary.json';
 const FINANCIALS_URL = 'data/financials.json';
 const DISCLOSURES_URL = 'data/disclosures.json';
 const HALT_REASONS_URL = 'data/halt_reasons.json';
+const STAGE_URL = 'data/designation_stage.json';
 const AUTO_REFRESH_MS = 30 * 60 * 1000; // 30분마다 자동 새로고침 (수집은 매일 오전 9시 실행)
 const PAGE_SIZE = 300;
 
@@ -263,6 +264,7 @@ const C = {
   avg:{label:`${REG.avgDays}일 평균 시총(억원)`, num:true, get:s=>s.avg, cell:s=>fmtEok(s.avg) + (s.avgN<REG.avgDays ? ` <span class="note">(${s.avgN}일)</span>` : '')},
   px:{label:'종가(원)', num:true, get:s=>s.px, cell:s=>s.px==null?'-':Number(s.px).toLocaleString()},
   reason:{label:'거래정지 사유(공시 기반 추정)', ft:'select', sel:s=>s.reason?s.reason.label:'', get:s=>s.reason?s.reason.label:'', cell:s=>s.reason ? `<a href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${encodeURIComponent(s.reason.rcept_no)}" target="_blank" rel="noopener" title="${esc(s.reason.report_nm)}" style="color:var(--navy);">${esc(s.reason.label)}</a> <span class="note">(${formatDate(s.reason.date)})</span>` : ''},
+  stage:{label:'KRX 공시 단계(공시 기반)', ft:'select', sel:s=>s.stage?s.stage.label:'', get:s=>s.stage?s.stage.label:'', cell:s=>s.stage ? `<a href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${encodeURIComponent(s.stage.rcept_no)}" target="_blank" rel="noopener" title="${esc(s.stage.report_nm)}" style="color:var(--navy);">${esc(s.stage.label)}</a> <span class="note">(${formatDate(s.stage.date)}${s.stage.detail?' · '+esc(s.stage.detail):''})</span>` : ''},
   preCap:{label:'정지 직전 시총(억원)', num:true, get:s=>s.preHaltCap, cell:s=>s.haltFromStart ? '<span class="note">데이터 이전</span>' : fmtEok(s.preHaltCap)},
   gapCur:{label:'현행 기준 대비', num:true, get:s=>s.gapCur, cell:s=>fmtPct(s.gapCur,true), cls:s=>s.gapCur<0?'neg':''},
   streak:{label:'연속미달(거래일)', num:true, get:s=>s.streak, cell:s=>s.streak},
@@ -346,14 +348,15 @@ const VIEWS = {
     nav:'시가총액 미달', sub:'현행 기준 미달(정지 이전)',
     title:'시가총액 미달', desc:`현행 기준(코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억) 미달 종목 · 대시보드 자체 계산`,
     filters:[...BASE_FILTERS, {id:'streakMin', label:'연속미달 N일 이상', type:'number'},
-      {id:'status', label:'상태', type:'select', opts:[['','전체'],['watch','미달 주의'],['danger','지정 임박'],['crit','관리종목 지정 대상']]}],
+      {id:'status', label:'상태', type:'select', opts:[['','전체'],['watch','미달 주의'],['danger','지정 임박'],['crit','관리종목 지정 대상']]},
+      {id:'stageF', label:'KRX 공시 단계', type:'select', opts:[['','전체'],['관리종목 지정 우려(예고)','관리종목 지정 우려(예고)'],['상장폐지 우려 안내','상장폐지 우려 안내'],['관리종목 지정','관리종목 지정'],['관리종목 지정 해제','관리종목 지정 해제'],['__blank__','(공란)']]}],
     finFilters:true,
     defaults:{}, sort:['streak',-1],
     base:s=>!s.halted && s.streak>=1,
     basis:s=>s.latest,
-    cols:['name','code','mkt','ind','cap','gapCur','streak','status','finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'],
-    stats:list=>[['미달 종목(거래정지 이전)',list.length],['코스피 미달',list.filter(s=>s.m==='KOSPI'&&s.streak>0).length],['코스닥 미달',list.filter(s=>s.m==='KOSDAQ'&&s.streak>0).length],['지정 대상',list.filter(s=>s.status==='crit').length,'crit'],[`지정 임박(${DANGER_DAYS}일 이상)`,list.filter(s=>s.status==='danger').length]],
-    note:`지정 기준: 코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억, ${REG.current.streakDays}거래일 연속 미달. 관리종목 지정 후 90거래일 내 45거래일 연속 시가총액 미회복 시 상장폐지. "지정 대상"은 KRX가 실제 지정한 종목이 아니라 이 대시보드의 자체 계산값입니다. 이미 거래정지된 종목은 제외하고 정지 이전 종목만 표시합니다. PBR·PER 분자는 최신 시가총액입니다.`,
+    cols:['name','code','mkt','ind','cap','gapCur','streak','status','stage','finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'],
+    stats:list=>[['미달 종목(거래정지 이전)',list.length],['코스피 미달',list.filter(s=>s.m==='KOSPI'&&s.streak>0).length],['코스닥 미달',list.filter(s=>s.m==='KOSDAQ'&&s.streak>0).length],['거래소 공시 단계 확인',list.filter(s=>s.stage).length],['지정 대상',list.filter(s=>s.status==='crit').length,'crit'],[`지정 임박(${DANGER_DAYS}일 이상)`,list.filter(s=>s.status==='danger').length]],
+    note:`지정 기준: 코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억, ${REG.current.streakDays}거래일 연속 미달. 관리종목 지정 후 90거래일 내 45거래일 연속 시가총액 미회복 시 상장폐지. "지정 대상"은 KRX가 실제 지정한 종목이 아니라 이 대시보드의 자체 계산값입니다. 이미 거래정지된 종목은 제외하고 정지 이전 종목만 표시합니다. PBR·PER 분자는 최신 시가총액입니다. "KRX 공시 단계"는 DART 거래소공시 제목에서 관리종목 관련 공시(우려·예고, 상장폐지 우려 안내, 지정, 해제)를 찾은 대사용 값이며, 해당 공시가 없으면 비워 둡니다. 우려·예고는 지정 전 단계이므로 실제 지정 여부는 KRX KIND에서 확인하세요.`,
   },
   new:{
     nav:'신규 기준 사전검토', sub:`${REG.next.effective.replace('-','.')} 상향 대비`,
@@ -435,6 +438,7 @@ function applyFilters(view){
     if(capMax!=null && !(s.latest<=capMax)) return false;
     if(streakMin!=null && s.streak<streakMin) return false;
     if(f.status && s.status!==f.status) return false;
+    if(f.stageF){ const x = s.stage ? s.stage.label : ''; if(f.stageF==='__blank__' ? x!=='' : x!==f.stageF) return false; }
     if(v.finFilters && !finPass(s,f,v.basis)) return false;
     return true;
   });
@@ -653,10 +657,11 @@ function loadData(){
     fetch(SUMMARY_URL + '?t=' + Date.now()).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }),
     fetch(FINANCIALS_URL + '?t=' + Date.now()).then(r=>r.ok?r.json():{}).catch(()=>({})),
     fetch(HALT_REASONS_URL + '?t=' + Date.now()).then(r=>r.ok?r.json():{}).catch(()=>({})),
-  ]).then(([summary, financials, haltReasons])=>{
+    fetch(STAGE_URL + '?t=' + Date.now()).then(r=>r.ok?r.json():{}).catch(()=>({})),
+  ]).then(([summary, financials, haltReasons, stageMap])=>{
     dates = summary.dates; stocks = summary.stocks; financialsMap = financials;
     bySymbol = {};
-    stocks.forEach(s=>{ computeStock(s); s.reason = s.halted && haltReasons[s.c] ? haltReasons[s.c].reason : null; bySymbol[s.c] = s; });
+    stocks.forEach(s=>{ computeStock(s); s.reason = s.halted && haltReasons[s.c] ? haltReasons[s.c].reason : null; s.stage = !s.halted && stageMap[s.c] ? stageMap[s.c].stage : null; bySymbol[s.c] = s; });
     document.getElementById('asofLabel').textContent = '최신: ' + formatDate(summary.asof) + ' · ' + dates.length + ' 거래일(누적)';
     disclosuresPromise = null;
     renderView();

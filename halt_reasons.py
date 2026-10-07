@@ -1,9 +1,10 @@
 """
 거래정지 사유(공시 기반 추정) 수집
 =================================
-KRX가 정지 사유를 API로 제공하지 않아서, 거래정지 종목의 OpenDART 거래소공시(pblntf_ty=I) 제목에서
-사유 관련 키워드를 찾아 "추정 사유"로 표시한다. 최신 공시부터 확인해 처음 일치한 항목을 쓰고,
-일치하는 공시가 없으면 사유를 비워 둔다(null). 정확한 사유는 KRX KIND에서 확인해야 한다.
+KRX가 정지 사유를 API로 제공하지 않아서, 거래정지 종목의 OpenDART 거래소공시(pblntf_ty=I)에서 추정한다.
+  1순위: "주권매매거래정지 (사유)" 공시의 괄호 문구(마지막 정지해제 이후 최신 건)
+  2순위: 공시 제목의 사유 키워드(우려·예고 공시는 제외)
+근거가 없으면 사유를 비워 둔다(null). 정확한 사유는 KRX KIND에서 확인해야 한다.
 
 data/halt_reasons.json: { 종목코드: { reason: {label, date, report_nm, rcept_no} | null, checked_at } }
   현재 거래정지 상태인 종목만 담는다(정지가 풀린 종목은 다음 실행에서 제거).
@@ -49,25 +50,78 @@ def get_auth_key():
     return key.strip() if key else key
 
 
+HALT_NOTICE = re.compile(r"주권\s*매매\s*거래\s*정지")
+LAST_PAREN = re.compile(r"\(([^()]*)\)\s*$")
+TECHNICAL_HALT = re.compile(r"전자등록|병합|분할")
+
+
+def norm(text):
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
 def classify(report_nm):
-    name = re.sub(r"\s+", " ", report_nm or "")
+    name = norm(report_nm)
     for pattern, label in RULES:
         if pattern.search(name):
             return label
     return None
 
 
+def classify_halt_detail(detail):
+    """'주권매매거래정지 (…)' 공시의 괄호 문구를 사유 라벨로 바꾼다. 알 수 없으면 원문(최대 30자)을 쓴다."""
+    detail = norm(detail)
+    if not detail:
+        return None
+    if "상장폐지" in detail and "사유" in detail:
+        return "상장폐지 사유 발생"
+    if TECHNICAL_HALT.search(detail):
+        return "주식 병합·분할 등(기술적 정지)"
+    for pattern, label in RULES:
+        if pattern.search(detail):
+            return label
+    return detail[:30]
+
+
+def make_reason(row, label):
+    return {"label": label, "date": row.get("rcept_dt"), "report_nm": norm(row.get("report_nm")), "rcept_no": row.get("rcept_no")}
+
+
+def halt_notice_reason(rows):
+    """'주권매매거래정지' 공시 중 마지막 정지해제 이후의 것에서 괄호 사유가 있는 가장 최신 건을 쓴다."""
+    release = None
+    notices = []
+    for row in rows:  # 최신순
+        name = norm(row.get("report_nm"))
+        if not HALT_NOTICE.search(name):
+            continue
+        key = (row.get("rcept_dt") or "", row.get("rcept_no") or "")
+        if "해제" in name:
+            if release is None:
+                release = key
+            continue
+        notices.append((key, row, name))
+    for key, row, name in notices:
+        if release is not None and key <= release:
+            continue
+        m = LAST_PAREN.search(name)
+        if m:
+            label = classify_halt_detail(m.group(1))
+            if label:
+                return make_reason(row, label)
+    return None
+
+
 def find_reason(rows):
-    """최신순 공시 목록에서 처음 일치하는 사유를 반환한다."""
+    """1순위: 주권매매거래정지 공시의 괄호 사유. 2순위: 최신 공시 제목의 키워드. 없으면 None(공란)."""
+    reason = halt_notice_reason(rows)
+    if reason:
+        return reason
     for row in rows:
+        if re.search(r"우려|예고", norm(row.get("report_nm"))):
+            continue  # 우려·예고 공시는 정지 사유가 아니라 사전 안내다
         label = classify(row.get("report_nm"))
         if label:
-            return {
-                "label": label,
-                "date": row.get("rcept_dt"),
-                "report_nm": re.sub(r"\s+", " ", row.get("report_nm", "")).strip(),
-                "rcept_no": row.get("rcept_no"),
-            }
+            return make_reason(row, label)
     return None
 
 
