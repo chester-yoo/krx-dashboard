@@ -236,7 +236,6 @@ function computeStock(s){
   const tNext = thr(s.m,'next');
   s.gapNew = s.avg!=null ? (s.avg/tNext-1)*100 : null;
   s.gapCurAvg = s.avg!=null ? (s.avg/tCur-1)*100 : null;
-  s.newOnly = s.avg!=null && s.avg>=tCur && s.avg<tNext;
 
   let k = 0;
   while(k<n && s.h[n-1-k]==='1') k++;
@@ -270,7 +269,6 @@ const C = {
   status:{label:'상태', get:s=>s.statusRank, cell:badgeHtml},
   gapNew:{label:'신규 기준 대비', num:true, get:s=>s.gapNew, cell:s=>fmtPct(s.gapNew,true), cls:s=>s.gapNew<0?'neg':''},
   gapCurAvg:{label:'현행 기준 대비(평균)', num:true, get:s=>s.gapCurAvg, cell:s=>fmtPct(s.gapCurAvg,true), cls:s=>s.gapCurAvg<0?'neg':''},
-  tag:{label:'구분', get:s=>s.newOnly?1:0, cell:s=>(s.newOnly ? '<span class="badge b-watch">현행 통과 → 신규 미달</span>' : '<span class="badge b-danger">현행도 미달</span>') + (s.halted ? '<span class="badge b-halt">거래정지</span>' : '')},
 };
 
 function finCol(key,label,get,cell,opts={}){ return Object.assign({label, num:true, get:s=>s.fin?get(s.fin,s):null, cell:s=>s.fin?cell(s.fin,s):'-', cls:s=>{const v=s.fin?get(s.fin,s):null; return v==null?'mute':(opts.neg && v<0?'neg':'');}}, opts); }
@@ -336,7 +334,12 @@ const VIEWS = {
     base:s=>s.halted,
     basis:s=>s.latest,
     cols:['name','code','mkt','ind','cap','preCap','reason','finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'],
-    stats:list=>[['거래정지 종목',list.length],['코스피',list.filter(s=>s.m==='KOSPI').length],['코스닥',list.filter(s=>s.m==='KOSDAQ').length],['사유 확인(공시 기반)',list.filter(s=>s.reason).length]],
+    stats:list=>{
+      const by = {};
+      list.forEach(s=>{ const k = s.reason ? s.reason.label : '사유 미확인(공란)'; by[k] = (by[k]||0)+1; });
+      const kinds = Object.entries(by).sort((a,b)=> (a[0].startsWith('사유 미확인')) - (b[0].startsWith('사유 미확인')) || b[1]-a[1]);
+      return [['거래정지 종목',list.length], ...kinds.map(([k,n])=>[k,n])];
+    },
     note:'표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다. 거래정지 사유는 DART 거래소공시 제목에서 키워드(상장적격성 실질심사, 감사의견, 횡령·배임, 회생 등)를 찾아 추정한 값이며, 근거 공시가 없으면 비워 둡니다. 실제 사유와 다를 수 있으므로 KRX KIND에서 확인하세요. 정지 직전 시총은 보유 이력 시작일부터 정지 상태인 종목은 "데이터 이전"으로 표시합니다.',
   },
   below:{
@@ -345,25 +348,25 @@ const VIEWS = {
     filters:[...BASE_FILTERS, {id:'streakMin', label:'연속미달 N일 이상', type:'number'},
       {id:'status', label:'상태', type:'select', opts:[['','전체'],['watch','미달 주의'],['danger','지정 임박'],['crit','관리종목 지정 대상']]}],
     finFilters:true,
-    defaults:{streakMin:'1'}, sort:['streak',-1],
-    base:s=>!s.halted,
+    defaults:{}, sort:['streak',-1],
+    base:s=>!s.halted && s.streak>=1,
     basis:s=>s.latest,
     cols:['name','code','mkt','ind','cap','gapCur','streak','status','finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'],
-    stats:list=>[['미달 종목(1일 이상)',list.filter(s=>s.streak>0).length],['코스피 미달',list.filter(s=>s.m==='KOSPI'&&s.streak>0).length],['코스닥 미달',list.filter(s=>s.m==='KOSDAQ'&&s.streak>0).length],['지정 대상',list.filter(s=>s.status==='crit').length,'crit'],[`지정 임박(${DANGER_DAYS}일 이상)`,list.filter(s=>s.status==='danger').length]],
+    stats:list=>[['미달 종목(거래정지 이전)',list.length],['코스피 미달',list.filter(s=>s.m==='KOSPI'&&s.streak>0).length],['코스닥 미달',list.filter(s=>s.m==='KOSDAQ'&&s.streak>0).length],['지정 대상',list.filter(s=>s.status==='crit').length,'crit'],[`지정 임박(${DANGER_DAYS}일 이상)`,list.filter(s=>s.status==='danger').length]],
     note:`지정 기준: 코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억, ${REG.current.streakDays}거래일 연속 미달. 관리종목 지정 후 90거래일 내 45거래일 연속 시가총액 미회복 시 상장폐지. "지정 대상"은 KRX가 실제 지정한 종목이 아니라 이 대시보드의 자체 계산값입니다. 이미 거래정지된 종목은 제외하고 정지 이전 종목만 표시합니다. PBR·PER 분자는 최신 시가총액입니다.`,
   },
   new:{
     nav:'신규 기준 사전검토', sub:`${REG.next.effective.replace('-','.')} 상향 대비`,
     title:`신규 기준 사전검토 (${REG.next.effective.replace('-','.')})`,
-    desc:`최근 ${REG.avgDays}거래일 평균 시가총액이 신규 기준(코스피 ${REG.next.KOSPI}억 / 코스닥 ${REG.next.KOSDAQ}억) 미만인 종목`,
-    filters:[...BASE_FILTERS, {id:'onlyNew', label:'현행 통과 → 신규 미달만', type:'check'}],
+    desc:`거래정지·현행 기준 미달이 아닌 종목 중, 최근 ${REG.avgDays}거래일 평균 시가총액이 신규 기준(코스피 ${REG.next.KOSPI}억 / 코스닥 ${REG.next.KOSDAQ}억) 미만인 종목`,
+    filters:[...BASE_FILTERS],
     finFilters:true,
     defaults:{}, sort:['gapNew',1],
-    base:s=>s.avg!=null && s.avg < thr(s.m,'next'),
+    base:s=>!s.halted && s.streak===0 && s.avg!=null && s.avg < thr(s.m,'next'),
     basis:s=>s.avg,
-    cols:['name','code','mkt','ind','cap','avg','gapNew','gapCurAvg','tag','finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'],
-    stats:list=>[['신규 기준 미달',list.length],['코스피',list.filter(s=>s.m==='KOSPI').length],['코스닥',list.filter(s=>s.m==='KOSDAQ').length],['현행 통과 → 신규 미달',list.filter(s=>s.newOnly).length,'warn']],
-    note:`연속미달일수가 아니라 최근 ${REG.avgDays}거래일 단순평균 시가총액으로 판정한 단순 추출이며, 실제 지정 요건 판정이 아닙니다. 현행 기준 대비 %도 같은 평균 시총 기준입니다. PBR·PER 분자는 ${REG.avgDays}일 평균 시총입니다. 거래일이 ${REG.avgDays}일 미만인 종목은 보유 일수로 평균합니다.`,
+    cols:['name','code','mkt','ind','cap','avg','gapNew','gapCurAvg','finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'],
+    stats:list=>[['사전검토 대상',list.length],['코스피',list.filter(s=>s.m==='KOSPI').length],['코스닥',list.filter(s=>s.m==='KOSDAQ').length]],
+    note:`2번(거래정지)과 3번(현행 기준 미달)에 해당하지 않는 종목만 표시합니다. 연속미달일수가 아니라 최근 ${REG.avgDays}거래일 단순평균 시가총액으로 판정한 단순 추출이며, 실제 지정 요건 판정이 아닙니다. 현행 기준 대비 %도 같은 평균 시총 기준입니다. PBR·PER 분자는 ${REG.avgDays}일 평균 시총입니다. 거래일이 ${REG.avgDays}일 미만인 종목은 보유 일수로 평균합니다.`,
   },
 };
 const VIEW_KEYS = Object.keys(VIEWS);
@@ -432,7 +435,6 @@ function applyFilters(view){
     if(capMax!=null && !(s.latest<=capMax)) return false;
     if(streakMin!=null && s.streak<streakMin) return false;
     if(f.status && s.status!==f.status) return false;
-    if(f.onlyNew && !s.newOnly) return false;
     if(v.finFilters && !finPass(s,f,v.basis)) return false;
     return true;
   });
