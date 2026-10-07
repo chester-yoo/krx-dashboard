@@ -118,12 +118,12 @@
   td.mute{color:var(--ink-mute);}
   td.key{font-weight:700;}
   .tablewrap{max-height:600px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:#fff;}
-  body[data-view="all"] .side-panel{flex:1 1 300px;max-width:none;}
+  body[data-view="all"] .side-panel{flex:0 0 260px;max-width:260px;}
   body[data-view="all"] #filterPanel .controls-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));}
   body[data-view="all"] #filterPanel .field input, body[data-view="all"] #filterPanel .field select{width:100%;}
   body[data-view="all"] .tablewrap{max-height:400px;}
-  body:not([data-view="all"]) .tbl-main{flex:1 1 auto;}
-  body:not([data-view="all"]) #stockTable{width:100%;}
+  .tbl-main{flex:1 1 auto;}
+  #stockTable{width:100%;}
   thead tr.hf input, thead tr.hf select{width:100%;min-width:64px;font-size:11.5px;padding:3px 4px;border:1px solid var(--line-strong);border-radius:3px;font-family:inherit;background:#fff;color:var(--ink);}
   .rng-btn{width:100%;min-width:64px;background:#fff;color:var(--ink-soft);border:1px solid var(--line-strong);padding:3px 6px;font-size:11.5px;font-weight:500;border-radius:3px;}
   .rng-btn.on{color:var(--blue);border-color:#7f97c2;font-weight:700;}
@@ -476,7 +476,7 @@ const VIEWS = {
     defaults:{}, sort:['cap',-1], side:true,
     base:s=>true,
     basis:s=>s.latest,
-    cols:['name','code','mkt','ind','cap','avg','px'],
+    cols:['name','code','mkt','ind','cap','avg','px','per'],
     cards:(list, f)=>[
       {label:'전체 종목', n:list.length, on:!f.capMin && !f.capMax, apply:f=>{ delete f.capMin; delete f.capMax; }},
       ...CAP_BANDS.map(([lbl,lo,hi])=>({label:lbl, n:list.filter(s=>s.latest!=null && (lo==null||s.latest>=lo) && (hi==null||s.latest<hi)).length,
@@ -732,7 +732,7 @@ function renderToolbar(total){
   const v = VIEWS[currentView], st = viewState[currentView];
   const pages = Math.max(1, Math.ceil(total/PAGE_SIZE));
   document.getElementById('tblCount').innerHTML = `<b>${total.toLocaleString()}</b>개 종목` + (pages>1 ? ` · ${st.page+1}/${pages}쪽` : '') + ' · 헤더 클릭 시 정렬, 행 클릭 시 상세';
-  const hasFin = v.cols.some(k=>FIN_ALL.includes(k));
+  const hasFin = v.cols.filter(k=>FIN_ALL.includes(k)).length > 1;
   document.getElementById('tblActions').innerHTML =
     (hasFin ? `<span class="seg" role="group" aria-label="재무 컬럼"><button data-fin="core" class="${st.finMode==='core'?'on':''}">재무 핵심</button><button data-fin="all" class="${st.finMode==='all'?'on':''}">재무 전체</button></span>` : '') +
     `<button class="secondary" id="resetBtn">필터 초기화</button><button id="reloadBtn">데이터 새로고침</button>` +
