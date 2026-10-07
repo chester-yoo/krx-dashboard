@@ -118,6 +118,8 @@
   td.mute{color:var(--ink-mute);}
   td.key{font-weight:700;}
   .tablewrap{max-height:600px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:#fff;}
+  body[data-view="all"] #cardsArea, body[data-view="all"] #filterPanel, body[data-view="all"] #tablePanel{max-width:1080px;}
+  body[data-view="all"] .tablewrap{max-height:400px;}
   thead tr.hf input, thead tr.hf select{width:100%;min-width:64px;font-size:11.5px;padding:3px 4px;border:1px solid var(--line-strong);border-radius:3px;font-family:inherit;background:#fff;color:var(--ink);}
   .rng-btn{width:100%;min-width:64px;background:#fff;color:var(--ink-soft);border:1px solid var(--line-strong);padding:3px 6px;font-size:11.5px;font-weight:500;border-radius:3px;}
   .rng-btn.on{color:var(--blue);border-color:#7f97c2;font-weight:700;}
@@ -717,8 +719,8 @@ function renderToolbar(total){
   const hasFin = v.cols.some(k=>FIN_ALL.includes(k));
   document.getElementById('tblActions').innerHTML =
     (hasFin ? `<span class="seg" role="group" aria-label="재무 컬럼"><button data-fin="core" class="${st.finMode==='core'?'on':''}">재무 핵심</button><button data-fin="all" class="${st.finMode==='all'?'on':''}">재무 전체</button></span>` : '') +
-    `<button class="ghost ${st.showNote?'on':''}" id="noteToggle" aria-expanded="${st.showNote}">ⓘ 기준 설명</button>` +
-    `<button class="secondary" id="resetBtn">필터 초기화</button><button id="reloadBtn">데이터 새로고침</button>`;
+    `<button class="secondary" id="resetBtn">필터 초기화</button><button id="reloadBtn">데이터 새로고침</button>` +
+    `<button class="ghost ${st.showNote?'on':''}" id="noteToggle" aria-expanded="${st.showNote}">ⓘ 기준 설명</button>`;
   document.querySelectorAll('#tblActions [data-fin]').forEach(b=>b.addEventListener('click', ()=>{ st.finMode=b.dataset.fin; renderResults(true); }));
   document.getElementById('noteToggle').addEventListener('click', ()=>{ st.showNote=!st.showNote; renderNote(); renderToolbar(total); });
   document.getElementById('resetBtn').addEventListener('click', ()=>{ st.f = {...v.defaults}; st.h = {}; st.page=0; renderFilterPanel(); onFilterChange(true); });
@@ -825,6 +827,7 @@ function onFilterChange(rebuildHead=false){
 }
 function renderView(){
   openPop = null;
+  document.body.dataset.view = currentView;
   renderNav(); renderHeader(); renderCards(); renderFilterPanel(); renderNote(); renderChips(); renderResults(true);
 }
 
