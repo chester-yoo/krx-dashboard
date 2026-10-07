@@ -75,6 +75,10 @@
   .mkt-pill.kospi{background:#e8edf5;color:#1f4b8f;border-color:#b9c9e6;}
   .mkt-pill.kosdaq{background:#fdf6d9;color:#8a6d00;border-color:#eadd9a;}
   .tablewrap{max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:6px;}
+  thead tr:first-child th{height:34px;}
+  thead tr.hf th{top:34px;background:#2c3b52;padding:4px 6px;cursor:default;font-weight:400;}
+  thead tr.hf input, thead tr.hf select{width:100%;min-width:64px;font-size:11px;padding:3px 4px;border:1px solid var(--line-strong);border-radius:3px;font-family:inherit;background:#fff;color:var(--ink);}
+  thead tr.hf .rng{display:flex;gap:3px;} thead tr.hf .rng input{width:50%;min-width:52px;}
   .tbl-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;color:var(--ink-soft);}
   .more{text-align:center;padding:10px;}
   .empty{padding:36px 20px;text-align:center;color:var(--ink-mute);}
@@ -150,6 +154,7 @@
 const SUMMARY_URL = 'data/summary.json';
 const FINANCIALS_URL = 'data/financials.json';
 const DISCLOSURES_URL = 'data/disclosures.json';
+const HALT_REASONS_URL = 'data/halt_reasons.json';
 const AUTO_REFRESH_MS = 30 * 60 * 1000; // 30분마다 자동 새로고침 (수집은 매일 오전 9시 실행)
 const PAGE_SIZE = 300;
 
@@ -236,9 +241,7 @@ function computeStock(s){
   let k = 0;
   while(k<n && s.h[n-1-k]==='1') k++;
   s.halted = k>0;
-  s.haltDays = k;
   s.haltFromStart = k>0 && k===n;
-  s.haltStart = k>0 ? dates[n-k] : null;
   s.preHaltCap = null;
   for(let i=n-k-1;i>=0;i--){ if(s.cap[i]!=null){ s.preHaltCap = s.cap[i]; break; } }
 
@@ -253,15 +256,14 @@ function badgeHtml(s){
   return st + (s.halted ? '<span class="badge b-halt">거래정지</span>' : '');
 }
 const C = {
-  name:{label:'종목명', sticky:true, get:s=>s.n, cell:s=>esc(s.n)},
-  code:{label:'코드', get:s=>s.c, cell:s=>esc(s.c), num:true},
-  mkt:{label:'시장', get:s=>s.m, cell:MKT},
-  ind:{label:'업종', get:s=>s.i, cell:s=>esc(s.i||'-')},
+  name:{label:'종목명', sticky:true, ft:'text', get:s=>s.n, cell:s=>esc(s.n)},
+  code:{label:'코드', ft:'text', get:s=>s.c, cell:s=>esc(s.c), num:true},
+  mkt:{label:'시장', ft:'select', sel:s=>s.m, get:s=>s.m, cell:MKT},
+  ind:{label:'업종', ft:'select', sel:s=>s.i||'', get:s=>s.i, cell:s=>esc(s.i||'-')},
   cap:{label:'시가총액(억원)', num:true, get:s=>s.latest, cell:s=>fmtEok(s.latest)},
   avg:{label:`${REG.avgDays}일 평균 시총(억원)`, num:true, get:s=>s.avg, cell:s=>fmtEok(s.avg) + (s.avgN<REG.avgDays ? ` <span class="note">(${s.avgN}일)</span>` : '')},
   px:{label:'종가(원)', num:true, get:s=>s.px, cell:s=>s.px==null?'-':Number(s.px).toLocaleString()},
-  haltDays:{label:'정지 일수', num:true, get:s=>s.haltDays, cell:s=>s.haltFromStart ? `${s.haltDays}일 이상` : `${s.haltDays}일`},
-  haltStart:{label:'정지 시작일', num:true, get:s=>s.haltStart, cell:s=>s.haltStart ? (s.haltFromStart ? '≤ ' : '') + formatDate(s.haltStart) : '-'},
+  reason:{label:'거래정지 사유(공시 기반 추정)', ft:'select', sel:s=>s.reason?s.reason.label:'', get:s=>s.reason?s.reason.label:'', cell:s=>s.reason ? `<a href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${encodeURIComponent(s.reason.rcept_no)}" target="_blank" rel="noopener" title="${esc(s.reason.report_nm)}" style="color:var(--navy);">${esc(s.reason.label)}</a> <span class="note">(${formatDate(s.reason.date)})</span>` : ''},
   preCap:{label:'정지 직전 시총(억원)', num:true, get:s=>s.preHaltCap, cell:s=>s.haltFromStart ? '<span class="note">데이터 이전</span>' : fmtEok(s.preHaltCap)},
   gapCur:{label:'현행 기준 대비', num:true, get:s=>s.gapCur, cell:s=>fmtPct(s.gapCur,true), cls:s=>s.gapCur<0?'neg':''},
   streak:{label:'연속미달(거래일)', num:true, get:s=>s.streak, cell:s=>s.streak},
@@ -274,7 +276,7 @@ const C = {
 function finCol(key,label,get,cell,opts={}){ return Object.assign({label, num:true, get:s=>s.fin?get(s.fin,s):null, cell:s=>s.fin?cell(s.fin,s):'-', cls:s=>{const v=s.fin?get(s.fin,s):null; return v==null?'mute':(opts.neg && v<0?'neg':'');}}, opts); }
 function makeFinCols(basis){
   return {
-    finBase:finCol('finBase','재무 기준',f=>f.year,f=>`${f.year}(${f.fsDiv})`,{num:false}),
+    finBase:finCol('finBase','재무 기준',f=>f.year,f=>`${f.year}(${f.fsDiv})`,{num:false, ft:'select', sel:s=>s.fin?`${s.fin.year}(${s.fin.fsDiv})`:''}),
     rev:finCol('rev','매출액(억원)',f=>f.rev,f=>fmtEok(f.rev),{neg:true}),
     op:finCol('op','영업이익(억원)',f=>f.op,f=>fmtEok(f.op),{neg:true}),
     opm:finCol('opm','영업이익률',f=>f.opm,f=>fmtPct(f.opm),{neg:true}),
@@ -287,7 +289,7 @@ function makeFinCols(basis){
     growth:finCol('growth','매출성장률(YoY)',f=>f.growth,f=>fmtPct(f.growth,true),{neg:true}),
     pbr:{label:'PBR', num:true, get:s=>pbrOf(s,basis), cell:s=>pbrText(s,basis), cls:s=>pbrOf(s,basis)==null?'mute':''},
     per:{label:'PER', num:true, get:s=>perOf(s,basis), cell:s=>perText(s,basis), cls:s=>perOf(s,basis)==null?'mute':''},
-    impair:finCol('impair','자본잠식',f=>({full:3,part:2,unk:0.5,none:0})[f.impair]??null,f=>({full:'<span class="badge b-crit">완전잠식</span>',part:'<span class="badge b-danger">부분잠식</span>',none:'정상',unk:'<span class="note">자본금 미수집</span>'})[f.impair]||'-',{num:false}),
+    impair:finCol('impair','자본잠식',f=>({full:3,part:2,unk:0.5,none:0})[f.impair]??null,f=>({full:'<span class="badge b-crit">완전잠식</span>',part:'<span class="badge b-danger">부분잠식</span>',none:'정상',unk:'<span class="note">자본금 미수집</span>'})[f.impair]||'-',{num:false, ft:'select', sel:s=>s.fin?({full:'완전잠식',part:'부분잠식',none:'정상',unk:'자본금 미수집'}[s.fin.impair]||''):''}),
   };
 }
 function pbrOf(s,basis){ const f=s.fin, c=basis(s); return f && f.eq>0 && c!=null ? c/f.eq : null; }
@@ -328,27 +330,27 @@ const VIEWS = {
   },
   halt:{
     nav:'거래정지', sub:'현재 거래정지 종목',
-    title:'거래정지', desc:'최신 일자 기준 거래정지 상태인 종목',
-    filters:[...BASE_FILTERS, {id:'haltMin', label:'정지 일수 ≥', type:'number'}],
-    defaults:{}, sort:['haltDays',-1],
+    title:'거래정지', desc:'최신 일자 기준 거래정지 상태인 종목 · 사유는 거래소공시 기반 추정',
+    filters:[], headerFilters:true,
+    defaults:{}, sort:['cap',-1],
     base:s=>s.halted,
     basis:s=>s.latest,
-    cols:['name','code','mkt','ind','cap','haltDays','haltStart','preCap','finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'],
-    stats:list=>[['거래정지 종목',list.length],['코스피',list.filter(s=>s.m==='KOSPI').length],['코스닥',list.filter(s=>s.m==='KOSDAQ').length],[`보유기간 내내 정지`,list.filter(s=>s.haltFromStart).length]],
-    note:`정지 일수는 보유 이력(${'{N}'}거래일) 안에서 최신일부터 연속 정지된 일수입니다. 이력 시작일까지 이어지면 "N일 이상"으로 표시하며 실제 정지 시작일은 그 이전입니다. 거래정지 사유는 제공하지 않습니다.`,
+    cols:['name','code','mkt','ind','cap','preCap','reason','finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'],
+    stats:list=>[['거래정지 종목',list.length],['코스피',list.filter(s=>s.m==='KOSPI').length],['코스닥',list.filter(s=>s.m==='KOSDAQ').length],['사유 확인(공시 기반)',list.filter(s=>s.reason).length]],
+    note:'표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다. 거래정지 사유는 DART 거래소공시 제목에서 키워드(상장적격성 실질심사, 감사의견, 횡령·배임, 회생 등)를 찾아 추정한 값이며, 근거 공시가 없으면 비워 둡니다. 실제 사유와 다를 수 있으므로 KRX KIND에서 확인하세요. 정지 직전 시총은 보유 이력 시작일부터 정지 상태인 종목은 "데이터 이전"으로 표시합니다.',
   },
   below:{
-    nav:'시가총액 미달', sub:'현행 기준 미달 종목',
+    nav:'시가총액 미달', sub:'현행 기준 미달(정지 이전)',
     title:'시가총액 미달', desc:`현행 기준(코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억) 미달 종목 · 대시보드 자체 계산`,
     filters:[...BASE_FILTERS, {id:'streakMin', label:'연속미달 N일 이상', type:'number'},
       {id:'status', label:'상태', type:'select', opts:[['','전체'],['watch','미달 주의'],['danger','지정 임박'],['crit','관리종목 지정 대상']]}],
     finFilters:true,
     defaults:{streakMin:'1'}, sort:['streak',-1],
-    base:s=>true,
+    base:s=>!s.halted,
     basis:s=>s.latest,
     cols:['name','code','mkt','ind','cap','gapCur','streak','status','finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'],
     stats:list=>[['미달 종목(1일 이상)',list.filter(s=>s.streak>0).length],['코스피 미달',list.filter(s=>s.m==='KOSPI'&&s.streak>0).length],['코스닥 미달',list.filter(s=>s.m==='KOSDAQ'&&s.streak>0).length],['지정 대상',list.filter(s=>s.status==='crit').length,'crit'],[`지정 임박(${DANGER_DAYS}일 이상)`,list.filter(s=>s.status==='danger').length]],
-    note:`지정 기준: 코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억, ${REG.current.streakDays}거래일 연속 미달. 관리종목 지정 후 90거래일 내 45거래일 연속 시가총액 미회복 시 상장폐지. "지정 대상"은 KRX가 실제 지정한 종목이 아니라 이 대시보드의 자체 계산값입니다. PBR·PER 분자는 최신 시가총액입니다.`,
+    note:`지정 기준: 코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억, ${REG.current.streakDays}거래일 연속 미달. 관리종목 지정 후 90거래일 내 45거래일 연속 시가총액 미회복 시 상장폐지. "지정 대상"은 KRX가 실제 지정한 종목이 아니라 이 대시보드의 자체 계산값입니다. 이미 거래정지된 종목은 제외하고 정지 이전 종목만 표시합니다. PBR·PER 분자는 최신 시가총액입니다.`,
   },
   new:{
     nav:'신규 기준 사전검토', sub:`${REG.next.effective.replace('-','.')} 상향 대비`,
@@ -366,12 +368,12 @@ const VIEWS = {
 };
 const VIEW_KEYS = Object.keys(VIEWS);
 const viewState = {};
-VIEW_KEYS.forEach(k=>{ viewState[k] = {f:{...VIEWS[k].defaults}, sortKey:VIEWS[k].sort[0], sortDir:VIEWS[k].sort[1]}; });
+VIEW_KEYS.forEach(k=>{ viewState[k] = {f:{...VIEWS[k].defaults}, h:{}, sortKey:VIEWS[k].sort[0], sortDir:VIEWS[k].sort[1]}; });
 
 function colsFor(view){
   const v = VIEWS[view];
   const all = Object.assign({}, C, makeFinCols(v.basis));
-  return v.cols.map(k=>Object.assign({key:k}, all[k]));
+  return v.cols.map(k=>{ const c = Object.assign({key:k}, all[k]); if(c.ft===undefined && c.num) c.ft='range'; return c; });
 }
 
 /* ---------- 필터 적용 ---------- */
@@ -400,17 +402,34 @@ function finPass(s, f, basis){
   }
   return true;
 }
+function headerPass(s, cols, h){
+  for(const c of cols){
+    if(!c.ft) continue;
+    if(c.ft==='text'){
+      const q = (h[c.key]||'').trim().toLowerCase();
+      if(q && !String(c.get(s)??'').toLowerCase().includes(q)) return false;
+    } else if(c.ft==='select'){
+      const val = h[c.key];
+      if(val){ const x = c.sel(s); if(val==='__blank__' ? x!=='' : x!==val) return false; }
+    } else {
+      const mn = num(h[c.key+'_min']), mx = num(h[c.key+'_max']);
+      if(mn!=null || mx!=null){ const x = c.get(s); if(x==null || (mn!=null && x<mn) || (mx!=null && x>mx)) return false; }
+    }
+  }
+  return true;
+}
 function applyFilters(view){
   const v = VIEWS[view], f = viewState[view].f;
   const q = (f.q||'').trim().toLowerCase();
-  const capMin=num(f.capMin), capMax=num(f.capMax), haltMin=num(f.haltMin), streakMin=num(f.streakMin);
+  const capMin=num(f.capMin), capMax=num(f.capMax), streakMin=num(f.streakMin);
+  const hcols = v.headerFilters ? colsFor(view) : null, h = viewState[view].h;
   return stocks.filter(v.base).filter(s=>{
+    if(hcols && !headerPass(s,hcols,h)) return false;
     if(q && !s.n.toLowerCase().includes(q) && !s.c.toLowerCase().includes(q)) return false;
     if(f.market && s.m!==f.market) return false;
     if(f.industry && s.i!==f.industry) return false;
     if(capMin!=null && !(s.latest>=capMin)) return false;
     if(capMax!=null && !(s.latest<=capMax)) return false;
-    if(haltMin!=null && s.haltDays<haltMin) return false;
     if(streakMin!=null && s.streak<streakMin) return false;
     if(f.status && s.status!==f.status) return false;
     if(f.onlyNew && !s.newOnly) return false;
@@ -446,7 +465,7 @@ function renderFilters(){
       shown = PAGE_SIZE; renderResults();
     });
   });
-  document.getElementById('resetBtn').addEventListener('click', ()=>{ st.f = {...v.defaults}; shown=PAGE_SIZE; renderFilters(); renderResults(); });
+  document.getElementById('resetBtn').addEventListener('click', ()=>{ st.f = {...v.defaults}; st.h = {}; shown=PAGE_SIZE; renderFilters(); renderResults(); });
   document.getElementById('reloadBtn').addEventListener('click', loadData);
 }
 function renderHeader(){
@@ -463,7 +482,20 @@ function renderStats(){
   document.getElementById('statsRow').innerHTML = v.stats(list).map(([l,n,c])=>`<div class="stat ${c||''}"><div class="num">${n.toLocaleString()}</div><div class="lbl">${esc(l)}</div></div>`).join('');
   document.getElementById('statsRow').style.display = 'grid';
 }
-function renderResults(){
+function headFilterCell(c, st, baseList){
+  const cls = c.sticky ? ' class="sticky"' : '';
+  if(!c.ft) return `<th${cls}></th>`;
+  const h = st.h;
+  if(c.ft==='text') return `<th${cls}><input type="text" data-h="${c.key}" value="${esc(h[c.key]||'')}" placeholder="검색"></th>`;
+  if(c.ft==='select'){
+    const vals = [...new Set(baseList.map(c.sel))].filter(x=>x!=='').sort((a,b)=>String(a).localeCompare(String(b),'ko'));
+    const blank = baseList.some(x=>c.sel(x)==='');
+    const cur = h[c.key]||'';
+    return `<th${cls}><select data-h="${c.key}"><option value="">전체</option>${vals.map(x=>`<option value="${esc(x)}" ${x===cur?'selected':''}>${esc(x)}</option>`).join('')}${blank?`<option value="__blank__" ${cur==='__blank__'?'selected':''}>(공란)</option>`:''}</select></th>`;
+  }
+  return `<th${cls}><div class="rng"><input type="number" data-h="${c.key}_min" value="${esc(h[c.key+'_min']||'')}" placeholder="최소"><input type="number" data-h="${c.key}_max" value="${esc(h[c.key+'_max']||'')}" placeholder="최대"></div></th>`;
+}
+function renderResults(rebuildHead=true){
   const v = VIEWS[currentView], st = viewState[currentView];
   const cols = colsFor(currentView);
   const sc = cols.find(c=>c.key===st.sortKey) || cols[0];
@@ -475,7 +507,22 @@ function renderResults(){
     const r = typeof av==='string' ? av.localeCompare(bv,'ko') : av-bv;
     return r*st.sortDir;
   });
-  document.getElementById('stockHead').innerHTML = '<tr>' + cols.map(c=>`<th data-key="${c.key}" class="${c.num?'num':''} ${c.sticky?'sticky':''}">${esc(c.label)}${c.key===st.sortKey?`<span class="arr">${st.sortDir>0?'▲':'▼'}</span>`:''}</th>`).join('') + '</tr>';
+  if(rebuildHead){
+    let head = '<tr>' + cols.map(c=>`<th data-key="${c.key}" class="${c.num?'num':''} ${c.sticky?'sticky':''}">${esc(c.label)}${c.key===st.sortKey?`<span class="arr">${st.sortDir>0?'▲':'▼'}</span>`:''}</th>`).join('') + '</tr>';
+    if(v.headerFilters){
+      const baseList = stocks.filter(v.base);
+      head += '<tr class="hf">' + cols.map(c=>headFilterCell(c, st, baseList)).join('') + '</tr>';
+    }
+    document.getElementById('stockHead').innerHTML = head;
+    document.querySelectorAll('#stockHead tr:first-child th').forEach(th=>th.addEventListener('click', ()=>{
+      const k = th.dataset.key;
+      if(st.sortKey===k) st.sortDir*=-1; else { st.sortKey=k; st.sortDir = ['name','mkt','ind','code','reason'].includes(k)?1:-1; }
+      renderResults();
+    }));
+    document.querySelectorAll('#stockHead [data-h]').forEach(el=>el.addEventListener(el.tagName==='SELECT'?'change':'input', ()=>{
+      st.h[el.dataset.h] = el.value; shown = PAGE_SIZE; renderResults(false);
+    }));
+  }
   const page = list.slice(0, shown);
   document.getElementById('stockBody').innerHTML = page.map(s=>`<tr data-code="${esc(s.c)}" class="${s.c===selectedCode?'selected':''}">${cols.map(c=>{
     const cls = [c.num?'num':'', c.sticky?'sticky':'', c.cls?c.cls(s):''].join(' ').trim();
@@ -483,11 +530,6 @@ function renderResults(){
   }).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" style="text-align:center;padding:20px;color:var(--ink-mute);">결과 없음</td></tr>`;
   document.getElementById('tblCount').textContent = `${list.length.toLocaleString()}개 종목` + (list.length>shown ? ` (상위 ${shown.toLocaleString()}개 표시)` : '');
   document.getElementById('moreWrap').style.display = list.length>shown ? 'block' : 'none';
-  document.querySelectorAll('#stockHead th').forEach(th=>th.addEventListener('click', ()=>{
-    const k = th.dataset.key;
-    if(st.sortKey===k) st.sortDir*=-1; else { st.sortKey=k; st.sortDir = ['name','mkt','ind','code'].includes(k)?1:-1; }
-    renderResults();
-  }));
   document.querySelectorAll('#stockBody tr[data-code]').forEach(tr=>tr.addEventListener('click', ()=>openDetail(tr.dataset.code)));
   document.getElementById('tablePanel').style.display = 'block';
   document.getElementById('emptyState').style.display = 'none';
@@ -567,7 +609,7 @@ function openDetail(code){
   const tCur = thr(s.m,'current'), tNext = thr(s.m,'next');
   document.getElementById('detail').classList.add('open');
   document.getElementById('detailName').textContent = `${s.n} (${s.c})`;
-  document.getElementById('detailSub').textContent = `${s.m}${s.i?' · '+s.i:''} · 현행 ${tCur.toLocaleString()}억 / 신규 ${tNext.toLocaleString()}억 · 연속미달 ${s.streak}거래일${s.halted?' · 거래정지':''}`;
+  document.getElementById('detailSub').textContent = `${s.m}${s.i?' · '+s.i:''} · 현행 ${tCur.toLocaleString()}억 / 신규 ${tNext.toLocaleString()}억 · 연속미달 ${s.streak}거래일${s.halted?' · 거래정지'+(s.reason?'('+s.reason.label+')':''):''}`;
   if(chartObj) chartObj.destroy();
   chartObj = new Chart(document.getElementById('trendChart'), {
     type:'line',
@@ -601,17 +643,18 @@ function routeFromHash(){
 }
 window.addEventListener('hashchange', routeFromHash);
 document.getElementById('closeDetail').addEventListener('click', closeDetail);
-document.getElementById('moreBtn').addEventListener('click', ()=>{ shown += PAGE_SIZE; renderResults(); });
+document.getElementById('moreBtn').addEventListener('click', ()=>{ shown += PAGE_SIZE; renderResults(false); });
 
 function loadData(){
   document.getElementById('asofLabel').textContent = '불러오는 중...';
   Promise.all([
     fetch(SUMMARY_URL + '?t=' + Date.now()).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }),
     fetch(FINANCIALS_URL + '?t=' + Date.now()).then(r=>r.ok?r.json():{}).catch(()=>({})),
-  ]).then(([summary, financials])=>{
+    fetch(HALT_REASONS_URL + '?t=' + Date.now()).then(r=>r.ok?r.json():{}).catch(()=>({})),
+  ]).then(([summary, financials, haltReasons])=>{
     dates = summary.dates; stocks = summary.stocks; financialsMap = financials;
     bySymbol = {};
-    stocks.forEach(s=>{ computeStock(s); bySymbol[s.c] = s; });
+    stocks.forEach(s=>{ computeStock(s); s.reason = s.halted && haltReasons[s.c] ? haltReasons[s.c].reason : null; bySymbol[s.c] = s; });
     document.getElementById('asofLabel').textContent = '최신: ' + formatDate(summary.asof) + ' · ' + dates.length + ' 거래일(누적)';
     disclosuresPromise = null;
     renderView();

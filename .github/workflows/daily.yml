@@ -35,6 +35,11 @@ jobs:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
         run: python disclosures.py update
 
+      - name: Update halt reasons (OpenDART exchange disclosures)
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        run: python halt_reasons.py update
+
       - name: Build dashboard summary
         run: python build_summary.py
 
