@@ -119,6 +119,7 @@
   td.key{font-weight:700;}
   .tablewrap{max-height:600px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:#fff;}
   body[data-view="all"] .side-panel{flex:0 0 260px;max-width:260px;}
+  body[data-view="all"] th[data-key="per"], body[data-view="all"] th[data-key="evEbitda"]{width:110px;}
   body[data-view="all"] #filterPanel .controls-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));}
   body[data-view="all"] #filterPanel .field input, body[data-view="all"] #filterPanel .field select{width:100%;}
   body[data-view="all"] .tablewrap{max-height:400px;}
@@ -413,6 +414,7 @@ const C = {
   streak:{label:'연속 미달', grp:'status', num:true, tip:`현행 기준 미만이 연속된 거래일 수. 막대는 ${REG.current.streakDays}거래일 대비 진행`, get:s=>s.streak, cell:streakCell},
   status:{label:'미달 단계', grp:'status', tip:'대시보드 자체 계산값이며 KRX의 실제 관리종목 지정 여부와 다를 수 있음', get:s=>s.statusRank, cell:statusBadge},
   stage:{label:'공시 단계', grp:'status', ft:'select', tip:'DART 거래소공시 제목에서 찾은 관리종목 관련 공시 단계. 공시가 없으면 공란. 세부 문구는 배지에 마우스를 올리면 표시', sel:s=>s.stage?s.stage.label:'', get:s=>s.stage?s.stage.label:'', cell:stageCell},
+  evEbitda:{label:'EV/EBITDA', grp:'fin', ctr:true, tip:'추후 추가 예정. EV = 시가총액 + 순차입금, EBITDA = 영업이익 + 감가상각비 (차입금·현금·감가상각비 추가 수집 필요)', get:s=>null, cell:s=>'-', cls:s=>'mute'},
   reason:{label:'정지 사유', grp:'status', ft:'select', tip:'"주권매매거래정지" 공시의 사유 문구를 우선 사용하고, 없으면 공시 제목 키워드로 추정. 근거가 없으면 공란. 실제 사유는 KRX KIND 확인', sel:s=>s.reason?s.reason.label:'', get:s=>s.reason?s.reason.label:'', cell:reasonCell},
 };
 
@@ -476,7 +478,7 @@ const VIEWS = {
     defaults:{}, sort:['cap',-1], side:true,
     base:s=>true,
     basis:s=>s.latest,
-    cols:['name','code','mkt','ind','cap','avg','px','per'],
+    cols:['name','code','mkt','ind','cap','avg','px','per','evEbitda'], colOpts:{per:{ctr:true}},
     cards:(list, f)=>[
       {label:'전체 종목', n:list.length, on:!f.capMin && !f.capMax, apply:f=>{ delete f.capMin; delete f.capMax; }},
       ...CAP_BANDS.map(([lbl,lo,hi])=>({label:lbl, n:list.filter(s=>s.latest!=null && (lo==null||s.latest>=lo) && (hi==null||s.latest<hi)).length,
@@ -541,7 +543,7 @@ function colsFor(view){
   const all = Object.assign({}, C, makeFinCols(v.basis));
   return v.cols
     .filter(k=>!(st.finMode==='core' && FIN_ALL.includes(k) && !all[k].core))
-    .map(k=>{ const c = Object.assign({key:k}, all[k]); if(c.ft===undefined && c.num) c.ft='range'; return c; });
+    .map(k=>{ const c = Object.assign({key:k}, all[k], (v.colOpts||{})[k]); if(c.ft===undefined && c.num) c.ft='range'; return c; });
 }
 
 /* ---------- 필터 적용 ---------- */
