@@ -27,7 +27,7 @@ import financials  # corp_code 매핑 재사용
 BASE_DIR = Path(__file__).resolve().parent
 HISTORY_PATH = BASE_DIR / "data" / "history.json"
 REASONS_PATH = BASE_DIR / "data" / "halt_reasons.json"
-CACHE_VERSION = 2  # 분류 규칙이 바뀌면 올려서 당일 캐시를 무효화한다
+CACHE_VERSION = 3  # 분류 규칙이 바뀌면 올려서 당일 캐시를 무효화한다
 
 API_BASE = "https://opendart.fss.or.kr/api"
 LOOKBACK_DAYS = 365 * 2
@@ -51,7 +51,21 @@ def get_auth_key():
 
 
 HALT_NOTICE = re.compile(r"주권\s*매매\s*거래\s*정지")
-PAREN_GROUPS = re.compile(r"\(([^()]*)\)")
+
+
+def top_level_groups(text):
+    """가장 바깥 괄호의 내용을 순서대로 반환한다(중첩 괄호는 안쪽까지 포함)."""
+    groups, depth, start = [], 0, None
+    for i, ch in enumerate(text):
+        if ch == "(":
+            if depth == 0:
+                start = i + 1
+            depth += 1
+        elif ch == ")" and depth > 0:
+            depth -= 1
+            if depth == 0 and start is not None:
+                groups.append(text[start:i])
+    return groups
 TECHNICAL_HALT = re.compile(r"전자등록|병합|분할|감자|자본감소")
 
 
@@ -105,7 +119,7 @@ def halt_notice_reason(rows):
     for key, row, name in notices:
         if release is not None and key <= release:
             continue
-        groups = PAREN_GROUPS.findall(name)
+        groups = top_level_groups(name)
         if groups:
             label = classify_halt_detail(groups[-1])
             if label:
