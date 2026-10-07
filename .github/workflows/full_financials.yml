@@ -1,0 +1,41 @@
+name: Full financials collection
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "sample (표본 10개사) 또는 full (전체)"
+        required: true
+        default: sample
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Collect full financial statements (OpenDART)
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        run: python full_financials.py ${{ inputs.mode }}
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "Full financials collection (${{ inputs.mode }})"
+          git pull --rebase
+          git push
