@@ -237,6 +237,91 @@ def xbrl_full(key):
     log(f"[xbrl] 완료: 이번 실행 {done}개 조회, 감가상각 확보 {found}개, 오류 {errors}건, 총 {(time.time()-started)/60:.1f}분")
 
 
+NOTES_SAMPLE_PATH = BASE_DIR / "data" / "notes_sample.json"
+# 감가상각비가 없는 소형사 10곳 + 정답을 아는 검증용 2곳(060480 본문 5.9억, 001570 XBRL 177.8억)
+NOTES_SAMPLE_CODES = ["011080", "208640", "199730", "086040", "481070", "038680", "109740", "289220", "006920", "011700", "060480", "001570"]
+DA_ROW = re.compile(r"^(유형자산)?감가상각비(용)?$|^감가상각비및(무형자산)?상각비$|^감가상각비와상각비$|^무형자산(상각비|상각)$"
+                    r"|^사용권자산(감가)?상각비$|^투자부동산(감가)?상각비$|^상각비$")
+TAG = re.compile(r"<[^>]+>")
+UNIT = re.compile(r"단위\s*[:：]?\s*(천원|백만원|억원|원)")
+
+
+def cell_text(html):
+    return re.sub(r"\s+", " ", TAG.sub(" ", html)).replace("&nbsp;", " ").strip()
+
+
+def parse_amount(t):
+    t = t.replace(",", "").replace(" ", "")
+    neg = t.startswith("(") and t.endswith(")") or t.startswith("-") and len(t) > 1
+    t = t.strip("()-△▲")
+    return (-1 if neg else 1) * float(t) if re.fullmatch(r"\d+(\.\d+)?", t) else None
+
+
+def notes_depr_candidates(text):
+    """원문 XML에서 감가상각비 계열 행을 모두 찾아 (구간 제목, 표 직전 문구, 단위, 행 이름, 숫자들)로 돌려준다."""
+    out, section, last_unit = [], "", None
+    for m in re.finditer(r"<TITLE[^>]*>(.*?)</TITLE>|<TABLE[^>]*>(.*?)</TABLE>|<P[^>]*>(.*?)</P>", text, re.S | re.I):
+        title, table, para = m.groups()
+        if title is not None:
+            section = cell_text(title)
+            continue
+        if para is not None:
+            u = UNIT.search(cell_text(para))
+            if u:
+                last_unit = u.group(1)
+            continue
+        unit_in = UNIT.search(cell_text(table))
+        unit = unit_in.group(1) if unit_in else last_unit
+        before = cell_text(text[max(0, m.start() - 400):m.start()])[-120:]
+        for row in re.findall(r"<TR[^>]*>(.*?)</TR>", table, re.S | re.I):
+            cells = [cell_text(c) for c in re.findall(r"<(?:TD|TE|TH|TU)[^>]*>(.*?)</(?:TD|TE|TH|TU)>", row, re.S | re.I)]
+            if not cells:
+                continue
+            label = re.sub(r"\s|\(\*?\d*\)|\*\d*|주석\d+|[①-⑩]", "", cells[0])
+            if DA_ROW.search(label):
+                nums = [parse_amount(c) for c in cells[1:]]
+                out.append({"section": section[:60], "before": before, "unit": unit, "label": cells[0][:30],
+                            "nums": [n for n in nums if n is not None][:6]})
+    return out
+
+
+def notes_sample(key):
+    import io
+    import zipfile
+    corp_map = financials.get_corp_code_map(key)
+    xbrl = json.load(open(XBRL_DEPR_PATH, encoding="utf-8")) if XBRL_DEPR_PATH.exists() else {}
+    year = str(datetime.now().year - 1)
+    out = {"year": year, "companies": {}}
+    for code in NOTES_SAMPLE_CODES:
+        entry, started = {}, time.time()
+        try:
+            rcept_no = (xbrl.get(code) or {}).get("rcept_no") or find_annual_report(key, corp_map[code], year)
+            entry["rcept_no"] = rcept_no
+            resp = requests.get(API_BASE + "/document.xml", params={"crtfc_key": key, "rcept_no": rcept_no}, timeout=180)
+            entry["bytes"] = len(resp.content)
+            z = zipfile.ZipFile(io.BytesIO(resp.content))
+            entry["files"] = z.namelist()
+            text = ""
+            for n in z.namelist():
+                raw = z.read(n)
+                for enc in ("utf-8", "cp949"):
+                    try:
+                        text += raw.decode(enc)
+                        break
+                    except UnicodeDecodeError:
+                        continue
+            entry["candidates"] = notes_depr_candidates(text)
+        except Exception as e:
+            entry["error"] = str(e)
+        entry["sec"] = round(time.time() - started, 2)
+        log(f"[notes] {code}: {entry.get('error') or str(len(entry.get('candidates', []))) + '개 후보 행'} ({entry['sec']}초, {entry.get('bytes', 0)//1024}KB)")
+        out["companies"][code] = entry
+        time.sleep(0.3)
+    with open(NOTES_SAMPLE_PATH, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    log(f"[notes] 표본 완료 -> {NOTES_SAMPLE_PATH.name}")
+
+
 def to_number(v):
     if v is None or v == "":
         return None
@@ -329,6 +414,8 @@ if __name__ == "__main__":
         xbrl_sample(key)
     elif cmd == "xbrl":
         xbrl_full(key)
+    elif cmd == "notes_sample":
+        notes_sample(key)
     else:
         print(__doc__)
         sys.exit(1)
