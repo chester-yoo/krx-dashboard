@@ -6,7 +6,7 @@
 최신 관련 공시 1건을 쓰고, 해당 공시가 없으면 단계를 비운다(null). 최종 확인은 KRX KIND에서 한다.
 
 단계 라벨
-  관리종목 지정 해제 / 관리종목 지정 우려(예고) / 관리종목 지정 / 상장폐지 우려 안내
+  관리종목 지정 해제 / 관리종목 지정 우려(예고) / 관리종목 지정 사유 발생 / 관리종목 지정 / 상장폐지 우려 안내
 
 data/designation_stage.json: { 종목코드: { stage: {label, detail, date, report_nm, rcept_no} | null, checked_at } }
   대상은 data/summary.json 기준 거래정지가 아니면서 현행 기준 미달(연속미달 1일 이상)인 종목이다.
@@ -30,12 +30,13 @@ from halt_reasons import fetch_exchange_reports, norm
 BASE_DIR = Path(__file__).resolve().parent
 SUMMARY_PATH = BASE_DIR / "data" / "summary.json"
 STAGE_PATH = BASE_DIR / "data" / "designation_stage.json"
+CACHE_VERSION = 2  # 분류 규칙이 바뀌면 올려서 당일 캐시를 무효화한다
 
 LOOKBACK_DAYS = 400
 # index.html의 REG.current와 같은 값으로 유지한다(현행 시가총액 기준, 억원).
 CURRENT_THRESHOLD = {"KOSPI": 300, "KOSDAQ": 200}
 
-LAST_PAREN = re.compile(r"\(([^()]*)\)\s*$")
+PAREN_GROUPS = re.compile(r"\(([^()]*)\)")
 
 
 def get_auth_key():
@@ -50,6 +51,8 @@ def classify_stage(report_nm):
             return "관리종목 지정 해제"
         if re.search(r"우려|예고", name):
             return "관리종목 지정 우려(예고)"
+        if re.search(r"사유\s*발생", name):
+            return "관리종목 지정 사유 발생"
         return "관리종목 지정"
     if "상장폐지" in name and "우려" in name:
         return "상장폐지 우려 안내"
@@ -62,10 +65,10 @@ def find_stage(rows):
         label = classify_stage(row.get("report_nm"))
         if label:
             name = norm(row.get("report_nm"))
-            m = LAST_PAREN.search(name)
+            groups = PAREN_GROUPS.findall(name)
             return {
                 "label": label,
-                "detail": m.group(1).strip() if m else "",
+                "detail": groups[-1].strip() if groups else "",
                 "date": row.get("rcept_dt"),
                 "report_nm": name,
                 "rcept_no": row.get("rcept_no"),
@@ -115,7 +118,7 @@ def update(codes, key):
     found = 0
     for code in codes:
         entry = cache.get(code)
-        if entry and entry.get("checked_at") == today:
+        if entry and entry.get("checked_at") == today and entry.get("v") == CACHE_VERSION:
             result[code] = entry
             found += 1 if entry.get("stage") else 0
             continue
@@ -128,7 +131,7 @@ def update(codes, key):
                 print(f"[designation_stage] {code} 오류: {e}")
                 stage = (entry or {}).get("stage")
             time.sleep(0.15)
-        result[code] = {"stage": stage, "checked_at": today}
+        result[code] = {"stage": stage, "checked_at": today, "v": CACHE_VERSION}
         found += 1 if stage else 0
 
     save_cache(result)

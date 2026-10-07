@@ -349,7 +349,7 @@ const VIEWS = {
     title:'시가총액 미달', desc:`현행 기준(코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억) 미달 종목 · 대시보드 자체 계산`,
     filters:[...BASE_FILTERS, {id:'streakMin', label:'연속미달 N일 이상', type:'number'},
       {id:'status', label:'상태', type:'select', opts:[['','전체'],['watch','미달 주의'],['danger','지정 임박'],['crit','관리종목 지정 대상']]},
-      {id:'stageF', label:'KRX 공시 단계', type:'select', opts:[['','전체'],['관리종목 지정 우려(예고)','관리종목 지정 우려(예고)'],['상장폐지 우려 안내','상장폐지 우려 안내'],['관리종목 지정','관리종목 지정'],['관리종목 지정 해제','관리종목 지정 해제'],['__blank__','(공란)']]}],
+      {id:'stageF', label:'KRX 공시 단계', type:'select', opts:[['','전체'],['관리종목 지정 우려(예고)','관리종목 지정 우려(예고)'],['상장폐지 우려 안내','상장폐지 우려 안내'],['관리종목 지정 사유 발생','관리종목 지정 사유 발생'],['관리종목 지정','관리종목 지정'],['관리종목 지정 해제','관리종목 지정 해제'],['__blank__','(공란)']]}],
     finFilters:true,
     defaults:{}, sort:['streak',-1],
     base:s=>!s.halted && s.streak>=1,

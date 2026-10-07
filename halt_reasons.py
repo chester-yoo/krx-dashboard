@@ -27,6 +27,7 @@ import financials  # corp_code 매핑 재사용
 BASE_DIR = Path(__file__).resolve().parent
 HISTORY_PATH = BASE_DIR / "data" / "history.json"
 REASONS_PATH = BASE_DIR / "data" / "halt_reasons.json"
+CACHE_VERSION = 2  # 분류 규칙이 바뀌면 올려서 당일 캐시를 무효화한다
 
 API_BASE = "https://opendart.fss.or.kr/api"
 LOOKBACK_DAYS = 365 * 2
@@ -40,7 +41,6 @@ RULES = [
     (re.compile(r"상장폐지"), "상장폐지 절차"),
     (re.compile(r"관리종목"), "관리종목 지정 관련"),
     (re.compile(r"회생절차|파산|해산"), "회생·파산 절차"),
-    (re.compile(r"매매거래정지"), "매매거래정지 공시"),
     (re.compile(r"제출\s*지연|미제출"), "보고서 제출 지연·미제출"),
 ]
 
@@ -51,8 +51,8 @@ def get_auth_key():
 
 
 HALT_NOTICE = re.compile(r"주권\s*매매\s*거래\s*정지")
-LAST_PAREN = re.compile(r"\(([^()]*)\)\s*$")
-TECHNICAL_HALT = re.compile(r"전자등록|병합|분할")
+PAREN_GROUPS = re.compile(r"\(([^()]*)\)")
+TECHNICAL_HALT = re.compile(r"전자등록|병합|분할|감자|자본감소")
 
 
 def norm(text):
@@ -72,6 +72,8 @@ def classify_halt_detail(detail):
     detail = norm(detail)
     if not detail:
         return None
+    if detail.replace(" ", "") == "투자자보호":
+        return "투자자 보호"
     if "상장폐지" in detail and "사유" in detail:
         return "상장폐지 사유 발생"
     if TECHNICAL_HALT.search(detail):
@@ -103,9 +105,9 @@ def halt_notice_reason(rows):
     for key, row, name in notices:
         if release is not None and key <= release:
             continue
-        m = LAST_PAREN.search(name)
-        if m:
-            label = classify_halt_detail(m.group(1))
+        groups = PAREN_GROUPS.findall(name)
+        if groups:
+            label = classify_halt_detail(groups[-1])
             if label:
                 return make_reason(row, label)
     return None
@@ -117,8 +119,8 @@ def find_reason(rows):
     if reason:
         return reason
     for row in rows:
-        if re.search(r"우려|예고", norm(row.get("report_nm"))):
-            continue  # 우려·예고 공시는 정지 사유가 아니라 사전 안내다
+        if re.search(r"우려|예고|해제", norm(row.get("report_nm"))):
+            continue  # 우려·예고는 사전 안내, 해제는 정지가 풀린 공시라 사유가 아니다
         label = classify(row.get("report_nm"))
         if label:
             return make_reason(row, label)
@@ -174,7 +176,7 @@ def update(codes, key):
     found = 0
     for code in codes:
         entry = cache.get(code)
-        if entry and entry.get("checked_at") == today:
+        if entry and entry.get("checked_at") == today and entry.get("v") == CACHE_VERSION:
             result[code] = entry
             found += 1 if entry.get("reason") else 0
             continue
@@ -187,7 +189,7 @@ def update(codes, key):
                 print(f"[halt_reasons] {code} 오류: {e}")
                 reason = (entry or {}).get("reason")
             time.sleep(0.15)
-        result[code] = {"reason": reason, "checked_at": today}
+        result[code] = {"reason": reason, "checked_at": today, "v": CACHE_VERSION}
         found += 1 if reason else 0
 
     save_cache(result)
