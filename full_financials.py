@@ -246,6 +246,8 @@ NOTES_SAMPLE_CODES = ["011080", "208640", "199730", "086040", "481070", "038680"
 DA_ROW = re.compile(r"^(유형자산)?감가상각비(용)?$|^감가상각비및(무형자산)?상각비$|^감가상각비와상각비$|^무형자산(상각비|상각)$"
                     r"|^사용권자산(감가)?상각비$|^투자부동산(감가)?상각비$|^상각비$")
 TAG = re.compile(r"<[^>]+>")
+# 태그 이름 뒤에 공백이나 > 가 와야 같은 태그로 본다(<P 가 <PGBRK>, <TABLE 이 <TABLE-GROUP> 을 잡아 주석 제목을 삼키던 문제)
+BLOCK = r"<TITLE(?:\s[^>]*)?>(.*?)</TITLE>|<TABLE(?:\s[^>]*)?>(.*?)</TABLE>|<P(?:\s[^>]*)?>(.*?)</P>"
 UNIT = re.compile(r"단위\s*[:：]?\s*(천원|백만원|억원|원)")
 
 
@@ -263,7 +265,7 @@ def parse_amount(t):
 def notes_depr_candidates(text):
     """원문 XML에서 감가상각비 계열 행을 모두 찾아 (구간 제목, 표 직전 문구, 단위, 행 이름, 숫자들)로 돌려준다."""
     out, section, last_unit = [], "", None
-    for m in re.finditer(r"<TITLE[^>]*>(.*?)</TITLE>|<TABLE[^>]*>(.*?)</TABLE>|<P[^>]*>(.*?)</P>", text, re.S | re.I):
+    for m in re.finditer(BLOCK, text, re.S | re.I):
         title, table, para = m.groups()
         if title is not None:
             section = cell_text(title)
@@ -426,7 +428,7 @@ def notes_raw_tables(text):
     """주석 구간에서 '상각'·'이자비용'이 들어간 표를 통째로(행 단위 셀 텍스트) 모은다. 선택 규칙은 로컬에서 정답과 대조하며 정한다.
     표마다 구간 제목·표 직전 문구·단위를 같이 남기고, 문서 전체의 통화 단위 표기 빈도도 센다."""
     tables, section, last_unit, currencies = [], "", None, {}
-    for m in re.finditer(r"<TITLE[^>]*>(.*?)</TITLE>|<TABLE[^>]*>(.*?)</TABLE>|<P[^>]*>(.*?)</P>", text, re.S | re.I):
+    for m in re.finditer(BLOCK, text, re.S | re.I):
         title, table, para = m.groups()
         if title is not None:
             section = cell_text(title)
