@@ -462,7 +462,7 @@ function makeFinCols(basis){
     impair:finCol('자본잠식',f=>({full:3,part:2,unk:0.5,none:0})[f.impair]??null,f=>({full:'<span class="badge b-crit">완전잠식</span>',part:'<span class="badge b-danger">부분잠식</span>',none:'정상',unk:'<span class="when">자본금 미수집</span>'})[f.impair]||'-',{num:false, ctr:true, core:true, tip:'완전잠식: 자본총계 < 0 / 부분잠식: 자본총계 < 자본금', ft:'select', sel:s=>s.fin?({full:'완전잠식',part:'부분잠식',none:'정상',unk:'자본금 미수집'}[s.fin.impair]||''):''}),
   };
 }
-const EXT_TIP = '최근 사업연도 기준(연결 우선). 금융업은 제외. 출처: OpenDART 전체 재무제표 본문. 감가상각비가 본문에 없으면 사업보고서 원문 주석(현금흐름 주석·비용의 성격별 분류, 자동 추출) → XBRL 주석 순으로 보완. 주석과 XBRL 값이 10% 넘게 다르면 † 표시(검증 필요)';
+const EXT_TIP = '최근 사업연도 기준(연결 우선). 금융업은 제외. 출처: OpenDART 전체 재무제표 + 사업보고서 원문 주석(자동 추출). 감가상각비는 현금흐름표 본문 → 주석(현금흐름 주석·비용의 성격별 분류 → 자산 변동표) → XBRL 주석 순. 주석과 XBRL 값이 10% 넘게 다르면 † 표시(검증 필요). 외화로 공시하는 종목은 ECB 환율로 원화 환산(손익은 연평균, 재무상태는 연말)';
 function evEbitdaOf(s,basis){
   const e=s.ext, c=basis(s);
   if(!e || e.nd==null || e.op==null || e.da==null || c==null) return null;
@@ -476,11 +476,11 @@ function extCols(basis){
         const t=`감가상각비 출처: ${e.da_src||''} (${e.da}억)` + (e.da_chk==='일치'?' · 주석·XBRL 대조 일치':'') + (off?` · 다른 출처 값 ${e.da_alt}억과 10% 넘게 차이, 검증 필요`:'');
         return `<span title="${esc(t)}">${v.toFixed(1)}배${off?'†':''}</span>`; },
       cls:s=>{ const v=evEbitdaOf(s,basis); return v==null ? 'mute' : (v<0 ? 'neg' : ''); }},
-    nd:{label:'순차입금', grp:'fin', num:true, tip:'차입금 + 사채(CB·BW·EB 포함) + 리스부채 − (현금및현금성자산 + 단기금융상품), 억원. 음수는 순현금. 금융 자회사가 있는 그룹은 연결 차입금에 금융업 부채가 포함됨. ' + EXT_TIP,
+    nd:{label:'순차입금', grp:'fin', num:true, tip:'차입금 + 사채(CB·BW·EB 포함) + 리스부채 + 상환전환우선주부채 − (현금및현금성자산 + 유동 금융자산), 억원. 음수는 순현금. 금융 자회사가 있는 그룹은 연결 차입금에 금융업 부채가 포함됨. ' + EXT_TIP,
       get:s=>s.ext?s.ext.nd:null, cell:s=>s.ext&&s.ext.nd!=null ? fmtEok(s.ext.nd) : '-', cls:s=>s.ext&&s.ext.nd!=null ? '' : 'mute'},
     ocf:{label:'영업CF', grp:'fin', num:true, tip:'영업활동현금흐름, 억원. ' + EXT_TIP,
       get:s=>s.ext?s.ext.ocf:null, cell:s=>s.ext&&s.ext.ocf!=null ? fmtEok(s.ext.ocf) : '-', cls:s=>s.ext&&s.ext.ocf!=null ? (s.ext.ocf<0?'neg':'') : 'mute'},
-    icr:{label:'이자보상배율', grp:'fin', num:true, tip:'영업이익 ÷ 이자비용. 이자비용이 따로 없으면 금융비용(외환손실 등 포함)으로 대신한 근사치이며 * 로 표시. ' + EXT_TIP,
+    icr:{label:'이자보상배율', grp:'fin', num:true, tip:'영업이익 ÷ 이자비용(손익계산서 → 금융비용 주석 → 현금흐름 조정 순). 이자비용을 찾지 못하면 금융비용(외환손실 등 포함)으로 대신한 근사치이며 * 로 표시. ' + EXT_TIP,
       get:s=>s.ext?s.ext.icr:null, cell:s=>{ const e=s.ext; if(!e||e.icr==null) return '-'; const approx=e.icr_basis==='금융비용'; return `<span title="${approx?'금융비용 기준 근사치':'이자비용 기준'}">${e.icr.toFixed(1)}배${approx?'*':''}</span>`; },
       cls:s=>s.ext&&s.ext.icr!=null ? (s.ext.icr<0?'neg':'') : 'mute'},
   };

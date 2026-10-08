@@ -113,6 +113,15 @@ MEMBER = re.compile(r"<(?:\w+:)?explicitMember[^>]*dimension=\"([^\"]+)\"[^>]*>(
 PERIOD = re.compile(r"<(?:\w+:)?(startDate|endDate|instant)>([^<]+)<")
 
 
+def find_annual_reports(key, corp_code, year):
+    """해당 사업연도 사업보고서 접수번호 목록(최신 → 최초). [첨부정정]·[첨부추가]는 본문이 없어 뺀다."""
+    resp = requests.get(API_BASE + "/list.json", params={
+        "crtfc_key": key, "corp_code": corp_code, "bgn_de": f"{int(year) + 1}0101", "end_de": f"{int(year) + 1}1231",
+        "pblntf_ty": "A", "pblntf_detail_ty": "A001", "page_count": 20}, timeout=30)
+    return [r["rcept_no"] for r in resp.json().get("list", [])
+            if "사업보고서" in (r.get("report_nm") or "") and "[첨부" not in r["report_nm"]]
+
+
 def find_annual_report(key, corp_code, year):
     """해당 사업연도 사업보고서의 접수번호(정정 포함 최신). [첨부정정]·[첨부추가]는 본문 원문 파일이 없어 건너뛴다."""
     resp = requests.get(API_BASE + "/list.json", params={
@@ -557,6 +566,69 @@ def notes_raw(key):
     log(f"[raw] 완료: 이번 실행 {done}개 수집, 오류 {errors}건, 누적 {len(store)}개, {NOTES_RAW_PATH.stat().st_size/1e6:.1f}MB, 총 {(time.time()-started)/60:.1f}분")
 
 
+def notes_raw_retry(key):
+    """notes_raw에서 표를 하나도 못 찾은 종목: 최신 보고서가 일부만 담은 [기재정정]인 경우가 많아,
+    같은 사업연도의 다른 사업보고서(이전 정정본·최초 제출본)를 차례로 읽어 표가 나오는 첫 문서를 쓴다."""
+    import gzip
+    corp_map = financials.get_corp_code_map(key)
+    accounts = json.load(open(ACCOUNTS_PATH, encoding="utf-8"))
+    store = json.load(gzip.open(NOTES_RAW_PATH, "rt", encoding="utf-8"))
+    targets = [c for c, v in store.items() if not v.get("tables") and corp_map.get(c) and (accounts.get(c) or {}).get("y")]
+    log(f"[raw-retry] 대상 {len(targets)}개 종목 (표 0개)")
+    fixed = 0
+    for code in targets:
+        try:
+            tried = store[code].get("rcept_no")
+            for rcept_no in find_annual_reports(key, corp_map[code], str(accounts[code]["y"])):
+                if rcept_no == tried:
+                    continue
+                tables, currencies = notes_raw_tables(fetch_document_text(key, rcept_no))
+                if tables:
+                    store[code] = {"rcept_no": rcept_no, "cur": currencies, "tables": tables}
+                    fixed += 1
+                    break
+        except Exception as e:
+            log(f"[raw-retry] {code} 오류: {e}")
+    with gzip.open(NOTES_RAW_PATH, "wt", encoding="utf-8") as f:
+        json.dump(store, f, ensure_ascii=False, separators=(",", ":"))
+    log(f"[raw-retry] 완료: {len(targets)}개 중 {fixed}개 보완")
+
+
+CURRENCY_PATH = BASE_DIR / "data" / "currency.json"
+
+
+def currency(key):
+    """보고 통화 확인: 전체 재무제표 API 응답의 currency 필드를 읽어 원화가 아닌 종목만 data/currency.json에 저장.
+    대상은 외국 기업(종목코드 9로 시작)과 원문 주석의 단위 표기 중 외화 비중이 25% 이상이거나 주석을 못 읽은 종목."""
+    import gzip
+    corp_map = financials.get_corp_code_map(key)
+    accounts = json.load(open(ACCOUNTS_PATH, encoding="utf-8"))
+    raw = json.load(gzip.open(NOTES_RAW_PATH, "rt", encoding="utf-8")) if NOTES_RAW_PATH.exists() else {}
+
+    def foreign_share(code):
+        cur = (raw.get(code) or {}).get("cur") or {}
+        total = sum(cur.values())
+        return sum(v for k, v in cur.items() if k != "원") / total if total else None
+
+    targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c)
+               and (c.startswith("9") or foreign_share(c) is None or foreign_share(c) >= 0.25)]
+    log(f"[currency] 대상 {len(targets)}개 종목")
+    found = {}
+    for code in targets:
+        acc = accounts[code]
+        try:
+            status, message, rows = fetch_full(key, corp_map[code], str(acc["y"]), acc.get("fs") or "CFS")
+            cur = next((r.get("currency") for r in rows if r.get("currency")), None)
+            if cur and cur.upper() != "KRW":
+                found[code] = cur.upper()
+        except Exception as e:
+            log(f"[currency] {code} 오류: {e}")
+        time.sleep(0.15)
+    with open(CURRENCY_PATH, "w", encoding="utf-8") as f:
+        json.dump(dict(sorted(found.items())), f, ensure_ascii=False, indent=1)
+    log(f"[currency] 완료: 외화 공시 {len(found)}개 종목 {sorted(set(found.values()))} -> {CURRENCY_PATH.name}")
+
+
 def notes_sample(key):
     import io
     import zipfile
@@ -699,6 +771,10 @@ if __name__ == "__main__":
         notes_full(key)
     elif cmd == "notes_raw":
         notes_raw(key)
+    elif cmd == "notes_raw_retry":
+        notes_raw_retry(key)
+    elif cmd == "currency":
+        currency(key)
     else:
         print(__doc__)
         sys.exit(1)

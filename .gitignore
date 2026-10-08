@@ -4,3 +4,4 @@ __pycache__/
 data/collect.log
 Code.gs
 WebApp.gs
+out/

@@ -27,6 +27,9 @@ jobs:
           KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
         run: python collect.py daily
 
+      - name: Update FX rates for foreign-currency filers (ECB via frankfurter.dev)
+        run: python fx.py || echo "[fx] 환율 갱신 실패 - 기존 fx_rates.json 사용"
+
       - name: Update financial statements (OpenDART)
         env:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
