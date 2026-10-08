@@ -33,9 +33,13 @@ from pathlib import Path
 
 import requests
 
+import fx
+
 BASE_DIR = Path(__file__).resolve().parent
 HISTORY_PATH = BASE_DIR / "data" / "history.json"
 CORP_CODE_PATH = BASE_DIR / "data" / "corp_codes.json"
+SUMMARY_PATH = BASE_DIR / "data" / "summary.json"
+CORP_CODE_META_PATH = BASE_DIR / "data" / "corp_codes_meta.json"
 FINANCIALS_PATH = BASE_DIR / "data" / "financials.json"
 ACCOUNTS_PATH = BASE_DIR / "data" / "dart_accounts.json"
 
@@ -95,34 +99,53 @@ def save_json(path, data):
         json.dump(data, f, ensure_ascii=False, indent=0, separators=(",", ":"))
 
 
+def _norm_name(name):
+    return re.sub(r"\s|주식회사|\(주\)|㈜|\(Reg\.S\)|\(유\)", "", name or "").upper()
+
+
 def fetch_corp_codes(key):
-    """DART 전체 기업코드 목록을 받아 상장 종목코드 -> corp_code 매핑을 만든다."""
+    """DART 전체 기업코드 목록을 받아 상장 종목코드 -> corp_code 매핑을 만든다.
+    한 종목코드에 기업이 여럿 걸려 있는 경우(분할 신설법인 등)가 있어, KRX 종목명과 회사명이 같은 기업을 고르고
+    없으면 최근 수정된 기업을 고른다. 신규 상장 종목의 영숫자 종목코드(예: 0001A0)도 받는다."""
     resp = requests.get(API_BASE + "/corpCode.xml", params={"crtfc_key": key}, timeout=60)
     resp.raise_for_status()
     z = zipfile.ZipFile(io.BytesIO(resp.content))
     xml_bytes = z.read(z.namelist()[0])
     text = xml_bytes.decode("utf-8")
+    krx_names = {}
+    if SUMMARY_PATH.exists():
+        krx_names = {r["c"]: _norm_name(r.get("n")) for r in load_json(SUMMARY_PATH, {}).get("stocks", [])}
 
-    mapping = {}
-    for m in re.finditer(
-        r"<corp_code>(\d+)</corp_code>\s*<corp_name>.*?</corp_name>\s*"
-        r"(?:<corp_eng_name>.*?</corp_eng_name>\s*)?<stock_code>\s*(\d*)\s*</stock_code>",
-        text,
-        re.S,
-    ):
-        corp_code, stock_code = m.group(1), m.group(2).strip()
+    candidates = {}
+    for m in re.finditer(r"<list>(.*?)</list>", text, re.S):
+        item = dict(re.findall(r"<(\w+)>\s*(.*?)\s*</\1>", m.group(1), re.S))
+        stock_code = item.get("stock_code", "").strip()
         if stock_code:
-            mapping[stock_code] = corp_code
+            candidates.setdefault(stock_code, []).append(item)
+    mapping, duplicated = {}, 0
+    for stock_code, items in candidates.items():
+        if len(items) > 1:
+            duplicated += 1
+        name = krx_names.get(stock_code)
+        same = [i for i in items if name and _norm_name(i.get("corp_name")) == name]
+        pick = max(same or items, key=lambda i: i.get("modify_date", ""))
+        mapping[stock_code] = pick["corp_code"]
+    log(f"[financials] 기업코드 {len(mapping)}개 (종목코드 중복 {duplicated}건은 KRX 종목명 일치 기준으로 선택)")
     return mapping
 
 
 def get_corp_code_map(key, refresh=False):
-    if not refresh:
+    """받은 지 7일이 지났으면 새로 받는다(신규 상장·기업코드 변경 반영). 받은 날짜는 corp_codes_meta.json에 남긴다
+    (워크플로 체크아웃은 파일 수정시각이 매번 바뀌어 날짜 판단에 쓸 수 없다)."""
+    meta = load_json(CORP_CODE_META_PATH, {})
+    fresh = meta.get("fetched") and (datetime.now() - datetime.fromisoformat(meta["fetched"])).days < 7
+    if not refresh and fresh:
         cached = load_json(CORP_CODE_PATH, None)
         if cached:
             return cached
     mapping = fetch_corp_codes(key)
     save_json(CORP_CODE_PATH, mapping)
+    save_json(CORP_CODE_META_PATH, {"fetched": datetime.now().isoformat(timespec="seconds")})
     return mapping
 
 
@@ -205,6 +228,8 @@ def rebuild_financials(raw, years, latest):
         for y in target_years:
             entry = derive_entry(raw_code, y, latest)
             if entry:
+                # 외화 공시 종목은 원화로 환산 (fx.py 참고)
+                entry = {k: (v if k == "fs_div" else fx.to_krw(code, y, k, v)) for k, v in entry.items()}
                 financials.setdefault(code, {})[str(y)] = entry
                 updated += 1
     save_json(FINANCIALS_PATH, financials)

@@ -12,6 +12,7 @@ data/full_accounts.json: { 종목코드: { y: 보고서연도, fs: CFS|OFS, rows
 사용법
   python full_financials.py sample   표본 10개사의 응답 원본과 호출 시간을 data/full_sample.json에 저장
   python full_financials.py full     summary.json의 전 종목을 동시 3건씩 조회해 full_accounts.json에 누적 저장
+  python full_financials.py full_refresh  이미 받은 종목까지 전부 다시 조회 (보관 계정 범위를 바꿨을 때)
                                      (이미 받은 종목은 건너뛰고, 시간 제한에 걸리면 저장 후 종료 → 다시 실행하면 이어서)
 """
 import json
@@ -39,9 +40,11 @@ SAVE_EVERY = 100
 
 # 저장할 계정: 계정명 키워드 또는 표준 계정ID 키워드 중 하나라도 맞으면 보관
 KEEP_NAME = re.compile(r"현금및현금성자산|단기금융상품|차입금|사채|리스부채|부채총계|자본총계|영업이익|영업손실|이자비용|금융비용|금융원가"
-                       r"|감가상각|상각비|영업활동|유형자산의 ?취득|무형자산의 ?취득|이자의 ?지급|당기순이익|당기순손실")
+                       r"|감가상각|상각비|영업활동|유형자산의 ?취득|무형자산의 ?취득|이자의 ?지급|당기순이익|당기순손실"
+                       r"|매출|영업수익|수익\(매출|지배|소유주|비지배")
 KEEP_ID = re.compile(r"CashAndCashEquivalents$|ShortTermDeposits|Borrowings|LoansReceived|Bonds|LeaseLiabilities|FinanceCosts|InterestExpense"
-                     r"|Depreciation|Amortisation|OperatingActivities|PurchaseOfPropertyPlant|PurchaseOfIntangible|InterestPaid")
+                     r"|Depreciation|Amortisation|OperatingActivities|PurchaseOfPropertyPlant|PurchaseOfIntangible|InterestPaid"
+                     r"|Revenue|ProfitLossAttributableTo")
 
 # 대형 연결 / 금융사 / 별도만 있는 소형사 / 거래정지 / 시가총액 미달 / 사전검토 종목을 섞은 표본
 SAMPLE_CODES = ["005930", "000660", "105560", "002360", "060480", "011080", "001570", "312610", "035620", "024070"]
@@ -532,6 +535,10 @@ def to_number(v):
 
 
 def keep(row):
+    """재무상태표는 전 계정을 보관(순부채의 차입금·현금성 자산 구성을 FnGuide 기준과 맞추려면 금융자산·금융부채 세부 계정이 필요),
+    손익·현금흐름표는 지표에 쓰는 계정만 보관."""
+    if row.get("sj_div") == "BS":
+        return True
     return bool(KEEP_NAME.search(row.get("account_nm") or "") or KEEP_ID.search(row.get("account_id") or ""))
 
 
@@ -551,12 +558,13 @@ def collect_one(key, corp_code, latest):
     return {"y": None, "fs": None, "rows": []}
 
 
-def full(key):
+def full(key, refresh=False):
+    """refresh=True면 이미 받은 종목도 모두 다시 받는다(보관 계정 범위를 바꿨을 때)."""
     corp_map = financials.get_corp_code_map(key)
     summary = json.load(open(SUMMARY_PATH, encoding="utf-8"))
     latest = datetime.now().year - 1
     store = json.load(open(ACCOUNTS_PATH, encoding="utf-8")) if ACCOUNTS_PATH.exists() else {}
-    targets = [s["c"] for s in summary["stocks"] if corp_map.get(s["c"]) and store.get(s["c"], {}).get("y") != latest]
+    targets = [s["c"] for s in summary["stocks"] if corp_map.get(s["c"]) and (refresh or store.get(s["c"], {}).get("y") != latest)]
     log(f"[full] 대상 {len(targets)}개 종목 (이미 받은 종목 {len(store)}개 제외), 동시 {WORKERS}건")
 
     started = time.time()
@@ -610,6 +618,8 @@ if __name__ == "__main__":
         sample(key)
     elif cmd == "full":
         full(key)
+    elif cmd == "full_refresh":
+        full(key, refresh=True)
     elif cmd == "xbrl_sample":
         xbrl_sample(key)
     elif cmd == "xbrl":

@@ -7,7 +7,7 @@ EV/EBITDA·순차입금·영업현금흐름·이자보상배율 계산용 확장
 
 산식(최근 사업연도, 연결 우선)
   현금      = 현금및현금성자산 + 단기금융상품(단기금융자산)
-  차입부채  = 차입금(단기·장기·유동성) + 사채(CB·BW·EB 포함) + 리스부채(유동·비유동)
+  차입부채  = 차입금(단기·장기·유동성장기부채) + 사채(CB·BW·EB 포함) + 리스부채(유동·비유동) + 유동화채무
   순차입금  = 차입부채 − 현금
   EBITDA    = 영업이익 + 감가상각비(유형·사용권·투자부동산) + 무형자산상각비
               감가상각비 출처 우선순위: 재무제표 본문(현금흐름표 조정·손익) → 원문 주석(현금흐름 주석 → 성격별 분류) → XBRL 주석 합계
@@ -24,6 +24,8 @@ import json
 import re
 from pathlib import Path
 
+import fx
+
 BASE_DIR = Path(__file__).resolve().parent
 ACCOUNTS_PATH = BASE_DIR / "data" / "full_accounts.json"
 XBRL_PATH = BASE_DIR / "data" / "xbrl_depr.json"
@@ -36,7 +38,8 @@ OUT_PATH = BASE_DIR / "data" / "fin_ext.json"
 FINANCIAL_INDUSTRY = re.compile(r"은행|보험|증권|창업투자|기타금융|카드|캐피탈|금융")
 CASH_NAME = re.compile(r"^현금및현금성자산$|^현금 및 현금성자산$")
 STFIN_NAME = re.compile(r"단기금융상품|단기금융자산")
-DEBT_NAME = re.compile(r"차입금|사채|리스부채|차입부채")
+DEBT_NAME = re.compile(r"차입금|사채|리스부채|차입부채|리스(비)?유동부채|장기부채|장기채무|차입채무|유동화채무")
+DEBT_ID = re.compile(r"Borrowings|BondsIssued|LeaseLiabilities|LoansReceived")  # 이름이 '단기금융부채' 등으로만 된 차입 계정 보완
 DEBT_EXCLUDE = re.compile(r"할인|할증|조정|발행비|상환|이자|미지급|충당")
 DA_NAME = re.compile(r"감가상각|(무형|유형|사용권|생물|투자부동산)\S*상각")
 DA_EXCLUDE = re.compile(r"대손|상각후원가|할인|할증|차금|손상|누계")
@@ -164,7 +167,7 @@ def build():
         pl = [r for r in rows if r[0] in ("IS", "CIS")]
         cash = first(bs, lambda r: r[1] == "ifrs-full_CashAndCashEquivalents" or CASH_NAME.search(r[2]))
         stfin = sum_distinct(bs, lambda r: STFIN_NAME.search(r[2]))
-        debt = sum_distinct(bs, lambda r: DEBT_NAME.search(r[2]) and not DEBT_EXCLUDE.search(r[2]))
+        debt = sum_distinct(bs, lambda r: (DEBT_NAME.search(r[2]) or DEBT_ID.search(r[1] or "")) and not DEBT_EXCLUDE.search(r[2]) and "파생" not in r[2])
         op = first(pl, lambda r: OP_NAME.search(r[2]))
         ocf = first(rows, lambda r: r[0] == "CF" and r[1] == OCF_ID)
         ie = first(pl, lambda r: IE_NAME.search(r[2]))
