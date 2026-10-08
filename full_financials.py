@@ -424,16 +424,31 @@ RAW_SKIP = re.compile(r"대손상각|상각후원가")
 CURRENCY_UNIT = re.compile(r"단위\s*[:：]?\s*(?:천|백만|억)?\s*(원|USD|US\$|달러|위안|RMB|CNY|엔|JPY|홍콩달러|HKD|싱가포르달러|SGD|유로|EUR)", re.I)
 
 
+def doc_scope(text, current):
+    """'연결재무제표에 대한 감사보고서'·'(첨부)연결재무제표' 같은 표지·제목이면 연결, '재무제표에 대한 감사보고서'면 별도."""
+    t = re.sub(r"\s", "", text)
+    if len(t) > 60:
+        return current
+    if "연결재무제표" in t:
+        return "연결"
+    if re.search(r"재무제표에대한|\(첨부\)재무제표|^재무제표$", t):
+        return "별도"
+    return current
+
+
 def notes_raw_tables(text):
     """주석 구간에서 '상각'·'이자비용'이 들어간 표를 통째로(행 단위 셀 텍스트) 모은다. 선택 규칙은 로컬에서 정답과 대조하며 정한다.
     표마다 구간 제목·표 직전 문구·단위를 같이 남기고, 문서 전체의 통화 단위 표기 빈도도 센다."""
-    tables, section, last_unit, currencies = [], "", None, {}
+    tables, section, last_unit, currencies, scope = [], "", None, {}, ""
     for m in re.finditer(BLOCK, text, re.S | re.I):
         title, table, para = m.groups()
         if title is not None:
             section = cell_text(title)
+            scope = doc_scope(section, scope)
             continue
         chunk = cell_text(para if para is not None else table)
+        if para is not None:
+            scope = doc_scope(chunk, scope)
         for cur in CURRENCY_UNIT.findall(chunk):
             currencies[cur.upper()] = currencies.get(cur.upper(), 0) + 1
         if para is not None:
@@ -449,7 +464,9 @@ def notes_raw_tables(text):
             cells = [cell_text(c)[:40] for c in re.findall(r"<(?:TD|TE|TH|TU)[^>]*>(.*?)</(?:TD|TE|TH|TU)>", row, re.S | re.I)]
             if any(cells):
                 rows.append(cells[:14])
-        tables.append({"sec": section[:40], "before": cell_text(text[max(0, m.start() - 400):m.start()])[-150:],
+        # 첨부 감사보고서의 주석은 제목이 그냥 '주석'이라 연결/별도를 표지 문구(scope)로 구분해 앞에 붙인다
+        sec = section if ("재무제표" in section or not scope) else f"{scope} {section}"
+        tables.append({"sec": sec[:40], "before": cell_text(text[max(0, m.start() - 400):m.start()])[-150:],
                        "unit": unit_in.group(0) if unit_in else last_unit, "rows": rows})
     return tables, currencies
 
