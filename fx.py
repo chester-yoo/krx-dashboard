@@ -25,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent
 CURRENCY_PATH = BASE_DIR / "data" / "currency.json"
 FX_PATH = BASE_DIR / "data" / "fx_rates.json"
 API = "https://api.frankfurter.dev/v1"
-BS_FIELDS = {"assets", "liabilities", "equity", "capital", "cash", "debt", "nd"}
+BS_FIELDS = {"assets", "liabilities", "equity", "equity_ctrl", "capital", "cash", "debt", "nd"}
 
 
 def _load(path):

@@ -42,6 +42,7 @@ SUMMARY_PATH = BASE_DIR / "data" / "summary.json"
 CORP_CODE_META_PATH = BASE_DIR / "data" / "corp_codes_meta.json"
 FINANCIALS_PATH = BASE_DIR / "data" / "financials.json"
 ACCOUNTS_PATH = BASE_DIR / "data" / "dart_accounts.json"
+FULL_ACCOUNTS_PATH = BASE_DIR / "data" / "full_accounts.json"  # 지배주주 순이익·지분 (full_financials.py)
 
 API_BASE = "https://opendart.fss.or.kr/api"
 BATCH_SIZE = 100
@@ -219,15 +220,39 @@ def derive_entry(raw_code, year, latest):
     return None
 
 
+CONTROLLING_IDS = {"net_income_ctrl": ("ifrs-full_ProfitLossAttributableToOwnersOfParent", ("IS", "CIS")),
+                   "equity_ctrl": ("ifrs-full_EquityAttributableToOwnersOfParent", ("BS",))}
+
+
+def controlling_values(full_accounts, code, year, fs_div):
+    """전체 재무제표(full_accounts.json)에서 지배주주 순이익·지배주주지분을 꺼낸다(PER·PBR 분모).
+    연결 재무제표에만 있으므로 별도 기준 종목은 순이익·자본총계가 곧 지배주주 몫이다."""
+    acc = full_accounts.get(code) or {}
+    if not acc.get("y") or acc.get("fs") != fs_div:
+        return {}
+    idx = acc["y"] - year  # 행 = [구분, 계정ID, 계정명, 당기, 전기, 전전기]
+    if not 0 <= idx <= 2:
+        return {}
+    out = {}
+    for field, (acc_id, sj) in CONTROLLING_IDS.items():
+        v = next((r[3 + idx] for r in acc["rows"] if r[0] in sj and r[1] == acc_id and r[3 + idx] is not None), None)
+        if v is not None:
+            out[field] = v
+    return out
+
+
 def rebuild_financials(raw, years, latest):
     """기존 financials.json을 바탕으로, 원본 저장소에서 만든 연도 항목으로 덮어쓴다."""
     financials = load_json(FINANCIALS_PATH, {})
+    full_accounts = load_json(FULL_ACCOUNTS_PATH, {})
     target_years = [latest - i for i in range(years)]
     updated = 0
     for code, raw_code in raw.items():
         for y in target_years:
             entry = derive_entry(raw_code, y, latest)
             if entry:
+                if entry.get("fs_div") == "CFS":
+                    entry.update(controlling_values(full_accounts, code, y, "CFS"))
                 # 외화 공시 종목은 원화로 환산 (fx.py 참고)
                 entry = {k: (v if k == "fs_div" else fx.to_krw(code, y, k, v)) for k, v in entry.items()}
                 financials.setdefault(code, {})[str(y)] = entry

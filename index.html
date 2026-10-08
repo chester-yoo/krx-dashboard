@@ -332,6 +332,8 @@ function buildFin(code){
     year: ys[0], fsDiv: d.fs_div==='CFS' ? '연결' : '별도',
     rev: toEok(d.revenue), op: toEok(d.operating_profit), ni: toEok(d.net_income),
     assets: toEok(d.assets), liab: toEok(d.liabilities), eq: toEok(d.equity), capital: toEok(d.capital),
+    // PER·PBR 분모는 지배주주 몫(연결). 별도 기준이거나 값이 없으면 전체 순이익·자본총계
+    niC: toEok(d.net_income_ctrl ?? d.net_income), eqC: toEok(d.equity_ctrl ?? d.equity),
     years: ys.map(y=>({year:y, d:fm[y]})),
   };
   f.opm = f.rev>0 && f.op!=null ? f.op/f.rev*100 : null;
@@ -455,8 +457,8 @@ function makeFinCols(basis){
     eq:finCol('자본',f=>f.eq,f=>fmtEok(f.eq),{neg:true}),
     debt:finCol('부채비율',f=>f.debt,f=>f.eqNonPos?'N/M':fmtPct(f.debt),{core:true}),
     growth:finCol('매출성장률',f=>f.growth,f=>fmtPct(f.growth,true),{neg:true, tip:'전년 대비 매출 증가율'}),
-    pbr:{label:'PBR', grp:'fin', core:true, num:true, tip:'시가총액 ÷ 자본총계', get:s=>pbrOf(s,basis), cell:s=>pbrText(s,basis), cls:s=>pbrOf(s,basis)==null?'mute':''},
-    per:{label:'PER', grp:'fin', core:true, num:true, tip:'시가총액 ÷ 당기순이익(적자는 N/M)', get:s=>perOf(s,basis), cell:s=>perText(s,basis), cls:s=>perOf(s,basis)==null?'mute':''},
+    pbr:{label:'PBR', grp:'fin', core:true, num:true, tip:'시가총액 ÷ 지배주주지분(연결 기준, 별도는 자본총계)', get:s=>pbrOf(s,basis), cell:s=>pbrText(s,basis), cls:s=>pbrOf(s,basis)==null?'mute':''},
+    per:{label:'PER', grp:'fin', core:true, num:true, tip:'시가총액 ÷ 지배주주순이익(연결 기준, 별도는 당기순이익). 적자는 N/M', get:s=>perOf(s,basis), cell:s=>perText(s,basis), cls:s=>perOf(s,basis)==null?'mute':''},
     impair:finCol('자본잠식',f=>({full:3,part:2,unk:0.5,none:0})[f.impair]??null,f=>({full:'<span class="badge b-crit">완전잠식</span>',part:'<span class="badge b-danger">부분잠식</span>',none:'정상',unk:'<span class="when">자본금 미수집</span>'})[f.impair]||'-',{num:false, ctr:true, core:true, tip:'완전잠식: 자본총계 < 0 / 부분잠식: 자본총계 < 자본금', ft:'select', sel:s=>s.fin?({full:'완전잠식',part:'부분잠식',none:'정상',unk:'자본금 미수집'}[s.fin.impair]||''):''}),
   };
 }
@@ -483,10 +485,10 @@ function extCols(basis){
       cls:s=>s.ext&&s.ext.icr!=null ? (s.ext.icr<0?'neg':'') : 'mute'},
   };
 }
-function pbrOf(s,basis){ const f=s.fin, c=basis(s); return f && f.eq>0 && c!=null ? c/f.eq : null; }
-function perOf(s,basis){ const f=s.fin, c=basis(s); return f && f.ni>0 && c!=null ? c/f.ni : null; }
-function pbrText(s,basis){ if(!s.fin||s.fin.eq==null) return '-'; return s.fin.eq<=0 ? 'N/M' : fmtX(pbrOf(s,basis)); }
-function perText(s,basis){ if(!s.fin||s.fin.ni==null) return '-'; return s.fin.ni<=0 ? 'N/M' : fmtX(perOf(s,basis)); }
+function pbrOf(s,basis){ const f=s.fin, c=basis(s); return f && f.eqC>0 && c!=null ? c/f.eqC : null; }
+function perOf(s,basis){ const f=s.fin, c=basis(s); return f && f.niC>0 && c!=null ? c/f.niC : null; }
+function pbrText(s,basis){ if(!s.fin||s.fin.eqC==null) return '-'; return s.fin.eqC<=0 ? 'N/M' : fmtX(pbrOf(s,basis)); }
+function perText(s,basis){ if(!s.fin||s.fin.niC==null) return '-'; return s.fin.niC<=0 ? 'N/M' : fmtX(perOf(s,basis)); }
 const FIN_ALL = ['finBase','rev','op','opm','ni','nim','assets','liab','eq','debt','growth','pbr','per','impair'];
 const FIN_PER_FIRST = FIN_ALL.filter(k=>k!=='per').flatMap(k=>k==='pbr' ? ['per','pbr','evEbitda'] : [k]);
 const EXT_KEYS = ['evEbitda','nd','ocf','icr'];
@@ -532,7 +534,7 @@ const VIEWS = {
         on:String(f.capMin??'')===String(lo??'') && String(f.capMax??'')===String(hi??'') && (lo!=null||hi!=null),
         apply:f=>{ if(lo==null) delete f.capMin; else f.capMin=String(lo); if(hi==null) delete f.capMax; else f.capMax=String(hi); f.capMaxExcl = hi!=null; }})),
     ],
-    note:`시표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다(숫자 컬럼은 "범위" 버튼). 가총액은 최신 거래일 기준(억원)입니다. 상단 구간 카드를 누르면 해당 시가총액 구간으로 필터링됩니다(상한 미만). 오른쪽 업종 분포는 현재 필터 결과 기준이며, 업종을 누르면 업종 필터가 적용됩니다.`,
+    note:`표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다(숫자 컬럼은 "범위" 버튼). 시가총액은 최신 거래일 기준(억원)입니다. 상단 구간 카드를 누르면 해당 시가총액 구간으로 필터링됩니다(상한 미만). 오른쪽 업종 분포는 현재 필터 결과 기준이며, 업종을 누르면 업종 필터가 적용됩니다.`,
   },
   halt:{
     nav:'거래정지', sub:'현재 거래정지 종목',
@@ -562,7 +564,7 @@ const VIEWS = {
       {label:`${REG.current.streakDays}일 이상 연속 미달`, n:list.filter(s=>s.status==='crit').length, tone:'dark', on:f.status==='crit', apply:f=>{ f.status='crit'; delete f.stageF; }},
       {label:'거래소 공시 단계 확인', n:list.filter(s=>s.stage).length, on:f.stageF==='__any__' && !f.status, apply:f=>{ f.stageF='__any__'; delete f.status; }},
     ],
-    note:`판표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다(숫자 컬럼은 "범위" 버튼). 정 기준: 코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억 미만이 ${REG.current.streakDays}거래일 연속되면 관리종목 지정 요건에 해당하고, 지정 후 90거래일 내 45거래일 연속 미회복 시 상장폐지됩니다. "미달 단계"는 이 대시보드가 연속 미달 일수로 계산한 값이며 KRX의 실제 관리종목 지정 여부가 아닙니다. 이미 거래정지된 종목은 제외합니다. "공시 단계"는 DART 거래소공시 제목에서 관리종목 관련 공시(우려·예고, 상장폐지 우려 안내, 지정 사유 발생, 지정, 해제)를 찾은 대사용 값이며, 공시가 없으면 비워 둡니다. PBR·PER 분자는 최신 시가총액입니다.`,
+    note:`표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다(숫자 컬럼은 "범위" 버튼). 판정 기준: 코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억 미만이 ${REG.current.streakDays}거래일 연속되면 관리종목 지정 요건에 해당하고, 지정 후 90거래일 내 45거래일 연속 미회복 시 상장폐지됩니다. "미달 단계"는 이 대시보드가 연속 미달 일수로 계산한 값이며 KRX의 실제 관리종목 지정 여부가 아닙니다. 이미 거래정지된 종목은 제외합니다. "공시 단계"는 DART 거래소공시 제목에서 관리종목 관련 공시(우려·예고, 상장폐지 우려 안내, 지정 사유 발생, 지정, 해제)를 찾은 대사용 값이며, 공시가 없으면 비워 둡니다. PBR·PER 분자는 최신 시가총액입니다.`,
   },
   new:{
     nav:'사전검토', sub:`${REG.next.effective.replace('-','.')} 상향 대비`,
@@ -578,7 +580,7 @@ const VIEWS = {
       {label:'사전검토 대상', n:list.length, on:!f.gapBand, apply:f=>{ delete f.gapBand; }},
       ...Object.entries(GAP_BANDS).map(([k,[lbl]])=>({label:`신규 기준 대비 ${lbl}`, n:list.filter(s=>gapInBand(s.gapNew,k)).length, tone:k==='a'?'dark':(k==='b'?'amber':''), on:f.gapBand===k, apply:f=>{ f.gapBand=k; }})),
     ],
-    note:`2표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다(숫자 컬럼은 "범위" 버튼). 번(거래정지)과 3번(현행 기준 미달)에 해당하지 않는 종목만 표시합니다. 연속미달일수가 아니라 최근 ${REG.avgDays}거래일 단순평균 시가총액으로 판정한 단순 추출이며, 실제 지정 요건 판정이 아닙니다. 근접 종목까지 보기 위해 추출 범위는 코스피 ${REG.screen.KOSPI}억 / 코스닥 ${REG.screen.KOSDAQ}억 미만으로 넓혔고, "신규 기준 대비"는 신규 기준(${REG.next.KOSPI}억 / ${REG.next.KOSDAQ}억) 대비 값입니다. PBR·PER 분자는 ${REG.avgDays}일 평균 시총입니다. 시행까지 남은 일수는 ${REG.next.effectiveDate} 기준이며, 정확한 시행일은 확인이 필요합니다.`,
+    note:`표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다(숫자 컬럼은 "범위" 버튼). 2번(거래정지)과 3번(현행 기준 미달)에 해당하지 않는 종목만 표시합니다. 연속미달일수가 아니라 최근 ${REG.avgDays}거래일 단순평균 시가총액으로 판정한 단순 추출이며, 실제 지정 요건 판정이 아닙니다. 근접 종목까지 보기 위해 추출 범위는 코스피 ${REG.screen.KOSPI}억 / 코스닥 ${REG.screen.KOSDAQ}억 미만으로 넓혔고, "신규 기준 대비"는 신규 기준(${REG.next.KOSPI}억 / ${REG.next.KOSDAQ}억) 대비 값입니다. PBR·PER 분자는 ${REG.avgDays}일 평균 시총입니다. 시행까지 남은 일수는 ${REG.next.effectiveDate} 기준이며, 정확한 시행일은 확인이 필요합니다.`,
   },
 };
 const VIEW_KEYS = Object.keys(VIEWS);
@@ -616,8 +618,8 @@ function finPass(s, f, basis){
   const opm=num(f.opmMin); if(opm!=null){ if(!fin||fin.opm==null){ if(!inc) return false; } else if(fin.opm<opm) return false; }
   const gr=num(f.growthMin); if(gr!=null){ if(!fin||fin.growth==null){ if(!inc) return false; } else if(fin.growth<gr) return false; }
   const dm=num(f.debtMax); if(dm!=null){ if(!fin||fin.eq==null||fin.liab==null){ if(!inc) return false; } else if(fin.debt==null||fin.debt>dm) return false; }
-  const pm=num(f.pbrMax); if(pm!=null){ if(!fin||fin.eq==null||basis(s)==null){ if(!inc) return false; } else { const p=pbrOf(s,basis); if(p==null||p>pm) return false; } }
-  const em=num(f.perMax); if(em!=null){ if(!fin||fin.ni==null||basis(s)==null){ if(!inc) return false; } else { const p=perOf(s,basis); if(p==null||p>em) return false; } }
+  const pm=num(f.pbrMax); if(pm!=null){ if(!fin||fin.eqC==null||basis(s)==null){ if(!inc) return false; } else { const p=pbrOf(s,basis); if(p==null||p>pm) return false; } }
+  const em=num(f.perMax); if(em!=null){ if(!fin||fin.niC==null||basis(s)==null){ if(!inc) return false; } else { const p=perOf(s,basis); if(p==null||p>em) return false; } }
   if(f.impair){
     if(!fin||fin.impair==null){ if(!inc) return false; }
     else if(fin.impair==='full') return false;
@@ -919,6 +921,7 @@ function renderFinancials(s){
     {label:'영업이익', unit:'eok', calc:d=>d.operating_profit==null?null:Math.round(d.operating_profit/1e8)},
     {label:'영업이익률', unit:'pct', calc:d=>pct(d.operating_profit,d.revenue)},
     {label:'당기순이익', unit:'eok', calc:d=>d.net_income==null?null:Math.round(d.net_income/1e8)},
+    {label:'지배주주순이익', unit:'eok', calc:d=>{ const v=d.net_income_ctrl ?? (d.fs_div==='OFS' ? d.net_income : null); return v==null?null:Math.round(v/1e8); }},
     {label:'당기순이익률', unit:'pct', calc:d=>pct(d.net_income,d.revenue)},
     {label:'자산총계', unit:'eok', calc:d=>d.assets==null?null:Math.round(d.assets/1e8)},
     {label:'부채총계', unit:'eok', calc:d=>d.liabilities==null?null:Math.round(d.liabilities/1e8)},
