@@ -111,12 +111,12 @@ PERIOD = re.compile(r"<(?:\w+:)?(startDate|endDate|instant)>([^<]+)<")
 
 
 def find_annual_report(key, corp_code, year):
-    """해당 사업연도 사업보고서의 접수번호(정정 포함 최신)."""
+    """해당 사업연도 사업보고서의 접수번호(정정 포함 최신). [첨부정정]·[첨부추가]는 본문 원문 파일이 없어 건너뛴다."""
     resp = requests.get(API_BASE + "/list.json", params={
         "crtfc_key": key, "corp_code": corp_code, "bgn_de": f"{int(year) + 1}0101", "end_de": f"{int(year) + 1}1231",
         "pblntf_ty": "A", "pblntf_detail_ty": "A001", "page_count": 10}, timeout=30)
     data = resp.json()
-    items = [r for r in data.get("list", []) if "사업보고서" in (r.get("report_nm") or "")]
+    items = [r for r in data.get("list", []) if "사업보고서" in (r.get("report_nm") or "") and "[첨부" not in r["report_nm"]]
     return items[0]["rcept_no"] if items else None
 
 

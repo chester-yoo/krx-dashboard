@@ -400,9 +400,7 @@ function statusBadge(s){
 }
 function reasonCell(s){
   if(!s.reason) return '';
-  const g = reasonGroup(s.reason.label);
-  const [, bg, fg] = reasonColors(s.reason.label);
-  return `<a class="badge r-${g}" style="background:${bg};color:${fg};border-color:${bg}" href="${dartUrl(s.reason.rcept_no)}" target="_blank" rel="noopener" title="${esc(s.reason.report_nm)}">${esc(s.reason.label)}</a><span class="when">${formatDate(s.reason.date)}</span>`;
+  return `<a class="badge r-tech" href="${dartUrl(s.reason.rcept_no)}" target="_blank" rel="noopener" title="${esc(s.reason.report_nm)}">${esc(s.reason.label)}</a><span class="when">${formatDate(s.reason.date)}</span>`;
 }
 function stageCell(s){
   if(!s.stage) return '';
@@ -456,7 +454,7 @@ function makeFinCols(basis){
     impair:finCol('자본잠식',f=>({full:3,part:2,unk:0.5,none:0})[f.impair]??null,f=>({full:'<span class="badge b-crit">완전잠식</span>',part:'<span class="badge b-danger">부분잠식</span>',none:'정상',unk:'<span class="when">자본금 미수집</span>'})[f.impair]||'-',{num:false, ctr:true, core:true, tip:'완전잠식: 자본총계 < 0 / 부분잠식: 자본총계 < 자본금', ft:'select', sel:s=>s.fin?({full:'완전잠식',part:'부분잠식',none:'정상',unk:'자본금 미수집'}[s.fin.impair]||''):''}),
   };
 }
-const EXT_TIP = '최근 사업연도 기준(연결 우선). 금융업은 제외. 출처: OpenDART 전체 재무제표 본문. 감가상각비가 본문에 없으면 사업보고서 원문 주석(현금흐름 주석·비용의 성격별 분류, 자동 추출) → XBRL 주석 순으로 보완';
+const EXT_TIP = '최근 사업연도 기준(연결 우선). 금융업은 제외. 출처: OpenDART 전체 재무제표 본문. 감가상각비가 본문에 없으면 사업보고서 원문 주석(현금흐름 주석·비용의 성격별 분류, 자동 추출) → XBRL 주석 순으로 보완. 주석과 XBRL 값이 10% 넘게 다르면 † 표시(검증 필요)';
 function evEbitdaOf(s,basis){
   const e=s.ext, c=basis(s);
   if(!e || e.nd==null || e.op==null || e.da==null || c==null) return null;
@@ -466,7 +464,9 @@ function evEbitdaOf(s,basis){
 function extCols(basis){
   return {
     evEbitda:{label:'EV/EBITDA', grp:'fin', num:true, tip:'EV ÷ EBITDA. EV = 시가총액 + 순차입금, EBITDA = 영업이익 + 감가상각비(무형자산상각 포함). 감가상각비를 확인하지 못한 종목은 공란, EBITDA 적자는 음수 그대로 표시. ' + EXT_TIP,
-      get:s=>evEbitdaOf(s,basis), cell:s=>{ const v=evEbitdaOf(s,basis); return v==null ? '-' : `<span title="감가상각비 출처: ${esc(s.ext.da_src||'')}">${v.toFixed(1)}배</span>`; },
+      get:s=>evEbitdaOf(s,basis), cell:s=>{ const v=evEbitdaOf(s,basis); if(v==null) return '-'; const e=s.ext, off=e.da_chk==='불일치';
+        const t=`감가상각비 출처: ${e.da_src||''} (${e.da}억)` + (e.da_chk==='일치'?' · 주석·XBRL 대조 일치':'') + (off?` · 다른 출처 값 ${e.da_alt}억과 10% 넘게 차이, 검증 필요`:'');
+        return `<span title="${esc(t)}">${v.toFixed(1)}배${off?'†':''}</span>`; },
       cls:s=>{ const v=evEbitdaOf(s,basis); return v==null ? 'mute' : (v<0 ? 'neg' : ''); }},
     nd:{label:'순차입금', grp:'fin', num:true, tip:'차입금 + 사채(CB·BW·EB 포함) + 리스부채 − (현금및현금성자산 + 단기금융상품), 억원. 음수는 순현금. 금융 자회사가 있는 그룹은 연결 차입금에 금융업 부채가 포함됨. ' + EXT_TIP,
       get:s=>s.ext?s.ext.nd:null, cell:s=>s.ext&&s.ext.nd!=null ? fmtEok(s.ext.nd) : '-', cls:s=>s.ext&&s.ext.nd!=null ? '' : 'mute'},
@@ -536,7 +536,7 @@ const VIEWS = {
     base:s=>s.halted, hideStatusInFull:true,
     basis:s=>s.latest,
     cols:['name','code','mkt','ind','cap','reason', ...FIN_PER_FIRST],
-    note:'표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다. 숫자 컬럼은 "범위" 버튼을 눌러 최소·최대를 입력합니다. 정지 사유는 "주권매매거래정지 (사유)" 공시의 사유 문구를 우선 사용하고, 없으면 공시 제목 키워드로 추정하며, 근거 공시가 없으면 비워 둡니다. 사유 배지 색은 위험(실질심사·상장폐지·감사의견·횡령·회생) / 기술적 정지(병합·분할·감자) / 기타(투자자 보호 등)로 구분합니다. 실제 사유와 다를 수 있으므로 KRX KIND에서 확인하세요.',
+    note:'표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다. 숫자 컬럼은 "범위" 버튼을 눌러 최소·최대를 입력합니다. 정지 사유는 "주권매매거래정지 (사유)" 공시의 사유 문구를 우선 사용하고, 없으면 공시 제목 키워드로 추정하며, 근거 공시가 없으면 비워 둡니다. 실제 사유와 다를 수 있으므로 KRX KIND에서 확인하세요.',
   },
   below:{
     nav:'시가총액 미달', sub:'현행 기준 미달(정지 이전)',
@@ -548,7 +548,7 @@ const VIEWS = {
     defaults:{}, sort:['streak',-1],
     base:s=>!s.halted && s.streak>=1, hideStatusInFull:true,
     basis:s=>s.latest,
-    cols:['name','code','mkt','ind','cap','gapCur','streak','status','stage', ...FIN_PER_FIRST],
+    cols:['name','code','mkt','ind','cap','gapCur','streak','stage', ...FIN_PER_FIRST],
     cards:(list, f)=>[
       {label:'미달 종목 전체', n:list.length, on:!f.status && !f.stageF, apply:f=>{ delete f.status; delete f.stageF; }},
       {label:`1~${DANGER_DAYS-1}일 연속 미달`, n:list.filter(s=>s.status==='watch').length, on:f.status==='watch', apply:f=>{ f.status='watch'; delete f.stageF; }},

@@ -11,6 +11,7 @@ EV/EBITDA·순차입금·영업현금흐름·이자보상배율 계산용 확장
   순차입금  = 차입부채 − 현금
   EBITDA    = 영업이익 + 감가상각비(유형·사용권·투자부동산) + 무형자산상각비
               감가상각비 출처 우선순위: 재무제표 본문(현금흐름표 조정·손익) → 원문 주석(현금흐름 주석 → 성격별 분류) → XBRL 주석 합계
+              주석·XBRL이 둘 다 있으면 대조해 고른다(pick_supplement 참고)
               원문 주석 값의 단위는 자산총계 대비 0.05~30% 범위에 드는 단위(천원·원·백만원)로 판정하고, 맞는 단위가 없으면 버린다
   이자보상배율 = 영업이익 ÷ 이자비용 (이자비용이 없으면 금융비용으로 대신하고 icr_basis="금융비용")
   EV/EBITDA는 시가총액이 매일 바뀌므로 화면에서 (시가총액 + 순차입금) ÷ EBITDA로 계산한다.
@@ -128,6 +129,27 @@ def notes_da(entry, assets):
     return None
 
 
+def pick_supplement(nv, xv, assets):
+    """원문 주석·XBRL이 둘 다 있으면 서로 대조한다 (±10% 이내면 '일치').
+    어긋나면: 주석이 XBRL의 1.1~2배 → 주석(XBRL이 무형상각 등 일부 항목을 빠뜨린 사례),
+    그 밖 → XBRL(주석 자동 추출이 일부 행·별도 기준을 집은 사례). 단, XBRL이 자산총계의 0.05% 미만이면 단위 오류로 보고 주석.
+    어긋난 종목은 da_chk='불일치'와 다른 출처 값(da_alt)을 남겨 화면에서 표시한다."""
+    if nv is not None and xv and assets and xv / assets < 0.0005:
+        xv = None
+    if nv is None and xv is None:
+        return None, None, None, None
+    if xv is None:
+        return nv, "원문 주석(자동 추출)", None, None
+    if nv is None:
+        return xv, "XBRL 주석", None, None
+    r = nv / xv
+    if 0.9 <= r <= 1.1:
+        return nv, "원문 주석(자동 추출)", "일치", None
+    if 1.1 < r <= 2:
+        return nv, "원문 주석(자동 추출)", "불일치", xv
+    return xv, "XBRL 주석", "불일치", nv
+
+
 def build():
     accounts = load(ACCOUNTS_PATH, {})
     xbrl = load(XBRL_PATH, {})
@@ -135,7 +157,7 @@ def build():
     notes = load(NOTES_PATH, {})
     fins = load(FINANCIALS_PATH, {})
     out = {}
-    stats = {"total": 0, "da_body": 0, "da_notes": 0, "da_xbrl": 0, "nd": 0, "ocf": 0, "icr": 0}
+    stats = {"total": 0, "da_body": 0, "da_notes": 0, "da_xbrl": 0, "da_match": 0, "da_mismatch": 0, "nd": 0, "ocf": 0, "icr": 0}
     for code, v in accounts.items():
         if not v.get("y") or FINANCIAL_INDUSTRY.search(industry.get(code, "")):
             continue
@@ -150,31 +172,30 @@ def build():
         ie = first(pl, lambda r: IE_NAME.search(r[2]))
         fc = first(pl, lambda r: FC_NAME.search(r[2]))
         assets = (fins.get(code, {}).get(str(year)) or {}).get("assets")
-        da, da_src = body_da(rows), "본문"
+        da, da_src, da_chk, da_alt = body_da(rows), "본문", None, None
         if da is None:
-            da, da_src = notes_da(notes.get(code), assets), "원문 주석(자동 추출)"
-        if da is None:
-            da, da_src = xbrl_da(xbrl.get(code, {}).get("facts", []), year), "XBRL 주석"
-        if da is None:
-            da_src = None
+            da, da_src, da_chk, da_alt = pick_supplement(notes_da(notes.get(code), assets),
+                                                         xbrl_da(xbrl.get(code, {}).get("facts", []), year), assets)
         cash_total = (cash or 0) + (stfin or 0) if (cash is not None or stfin is not None) else None
         nd = (debt or 0) - cash_total if cash_total is not None else None
         denom, basis = (ie, "이자비용") if ie else (fc, "금융비용")
         icr = round(op / denom, 2) if op is not None and denom else None
         out[code] = {"y": year, "fs": v.get("fs"), "cash": eok(cash_total), "debt": eok(debt or 0), "nd": eok(nd),
-                     "op": eok(op), "da": eok(da), "da_src": da_src, "ocf": eok(ocf), "icr": icr, "icr_basis": basis if icr is not None else None}
+                     "op": eok(op), "da": eok(da), "da_src": da_src, "da_chk": da_chk, "da_alt": eok(da_alt), "ocf": eok(ocf), "icr": icr, "icr_basis": basis if icr is not None else None}
         stats["total"] += 1
         stats["da_body"] += da_src == "본문"
         stats["da_notes"] += da_src == "원문 주석(자동 추출)"
         stats["da_xbrl"] += da_src == "XBRL 주석"
+        stats["da_match"] += da_chk == "일치"
+        stats["da_mismatch"] += da_chk == "불일치"
         stats["nd"] += nd is not None
         stats["ocf"] += ocf is not None
         stats["icr"] += icr is not None
     with open(OUT_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
     t = stats["total"] or 1
-    print(f"[ext] 비금융 {stats['total']}개사 · 감가상각 본문 {stats['da_body']} + 원문 주석 {stats['da_notes']} + XBRL {stats['da_xbrl']} = {(stats['da_body']+stats['da_notes']+stats['da_xbrl'])/t*100:.0f}% · "
-          f"순차입금 {stats['nd']/t*100:.0f}% · 영업CF {stats['ocf']/t*100:.0f}% · 이자보상배율 {stats['icr']/t*100:.0f}% -> {OUT_PATH.name}")
+    print(f"[ext] 비금융 {stats['total']}개사 · 감가상각 본문 {stats['da_body']} + 원문 주석 {stats['da_notes']} + XBRL {stats['da_xbrl']} = {(stats['da_body']+stats['da_notes']+stats['da_xbrl'])/t*100:.0f}% "
+          f"(주석·XBRL 대조 일치 {stats['da_match']} / 불일치 {stats['da_mismatch']}) · 순차입금 {stats['nd']/t*100:.0f}% · 영업CF {stats['ocf']/t*100:.0f}% · 이자보상배율 {stats['icr']/t*100:.0f}% -> {OUT_PATH.name}")
 
 
 if __name__ == "__main__":
