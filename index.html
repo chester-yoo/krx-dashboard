@@ -271,6 +271,7 @@ const REG = {
   current: { KOSPI: 300, KOSDAQ: 200, streakDays: 30 },
   next:    { KOSPI: 500, KOSDAQ: 300, effective: '2027-01', effectiveDate: '2027-01-01' },
   avgDays: 30,
+  screen:  { KOSPI: 550, KOSDAQ: 350 }, // 사전검토 추출 범위(신규 기준 근접 종목까지 포함)
 };
 const DANGER_DAYS = Math.ceil(REG.current.streakDays * 0.66);
 
@@ -310,7 +311,7 @@ function toEok(won){ return won==null ? null : won/1e8; }
 function fmtEok(n){ return n==null ? '-' : Math.round(n).toLocaleString(); }
 function fmtPct(n, sign){ return n==null ? '-' : (sign && n>0 ? '+' : '') + n.toFixed(1) + '%'; }
 function fmtX(n){ return n==null ? '-' : n.toFixed(2) + '배'; }
-function thr(market, set){ return (set==='next' ? REG.next : REG.current)[market] ?? REG[set==='next'?'next':'current'].KOSPI; }
+function thr(market, set){ const r = REG[set] || REG.current; return r[market] ?? r.KOSPI; }
 function reasonGroup(label){ return RISK_REASONS.includes(label) ? 'risk' : TECH_REASONS.includes(label) ? 'tech' : 'other'; }
 function dartUrl(no){ return `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${encodeURIComponent(no)}`; }
 
@@ -504,12 +505,12 @@ const FIN_FILTERS = [
   {id:'incNoData', label:'재무 데이터 없는 종목 포함', type:'check'},
 ];
 const CAP_BANDS = [['100억 미만',null,100],['100~300억',100,300],['300~1,000억',300,1000],['1,000억 이상',1000,null]];
-const GAP_BANDS = {a:['−50% 이하',null,-50], b:['−50 ~ −20%',-50,-20], c:['−20 ~ 0%',-20,0]};
+const GAP_BANDS = {a:['−50% 이하',null,-50], b:['−50 ~ −20%',-50,-20], c:['−20 ~ 0%',-20,0], d:['0% 이상(근접)',0,null]};
 const STATUS_OPTS = [['','전체'],['watch',`1~${DANGER_DAYS-1}일 연속 미달`],['danger',`${DANGER_DAYS}~${REG.current.streakDays-1}일 연속 미달`],['crit',`${REG.current.streakDays}일 이상 연속 미달`]];
 const STAGE_OPTS = [['','전체'],['__any__','공시 단계 확인됨'],['관리종목 지정 우려(예고)','관리종목 지정 우려(예고)'],['상장폐지 우려 안내','상장폐지 우려 안내'],['관리종목 지정 사유 발생','관리종목 지정 사유 발생'],['관리종목 지정','관리종목 지정'],['관리종목 지정 해제','관리종목 지정 해제'],['__blank__','(공란)']];
 
 function inBand(x, lo, hi, loOpen){ if(x==null) return false; if(lo!=null && (loOpen ? x<=lo : x<lo)) return false; if(hi!=null && x>hi) return false; return true; }
-function gapInBand(g, key){ const [,lo,hi]=GAP_BANDS[key]; if(g==null) return false; if(lo!=null && g<=lo) return false; if(hi!=null && (key==='c' ? g>=hi : g>hi)) return false; return true; }
+function gapInBand(g, key){ const [,lo,hi]=GAP_BANDS[key]; if(g==null) return false; if(key==='d') return g>=0; if(lo!=null && g<=lo) return false; if(hi!=null && (key==='c' ? g>=hi : g>hi)) return false; return true; }
 
 const VIEWS = {
   all:{
@@ -561,18 +562,18 @@ const VIEWS = {
   new:{
     nav:'사전검토', sub:`${REG.next.effective.replace('-','.')} 상향 대비`,
     title:`신규 기준 사전검토 (${REG.next.effective.replace('-','.')})`,
-    desc:`거래정지·현행 기준 미달이 아닌 종목 중, 최근 ${REG.avgDays}거래일 평균 시가총액이 신규 기준(코스피 ${REG.next.KOSPI}억 / 코스닥 ${REG.next.KOSDAQ}억) 미만인 종목`,
+    desc:`거래정지·현행 기준 미달이 아닌 종목 중, 최근 ${REG.avgDays}거래일 평균 시가총액이 신규 기준(코스피 ${REG.next.KOSPI}억 / 코스닥 ${REG.next.KOSDAQ}억) 미만 또는 근접한 종목`,
     filters:[...BASE_FILTERS],
     finFilters:true, dday:true,
     defaults:{}, sort:['gapNew',1],
-    base:s=>!s.halted && s.streak===0 && s.avg!=null && s.avg < thr(s.m,'next'),
+    base:s=>!s.halted && s.streak===0 && s.avg!=null && s.avg < thr(s.m,'screen'),
     basis:s=>s.avg,
     cols:['name','code','mkt','ind','cap','avg','gapNew', ...FIN_PER_FIRST],
     cards:(list, f)=>[
       {label:'사전검토 대상', n:list.length, on:!f.gapBand, apply:f=>{ delete f.gapBand; }},
       ...Object.entries(GAP_BANDS).map(([k,[lbl]])=>({label:`신규 기준 대비 ${lbl}`, n:list.filter(s=>gapInBand(s.gapNew,k)).length, tone:k==='a'?'dark':(k==='b'?'amber':''), on:f.gapBand===k, apply:f=>{ f.gapBand=k; }})),
     ],
-    note:`2번(거래정지)과 3번(현행 기준 미달)에 해당하지 않는 종목만 표시합니다. 연속미달일수가 아니라 최근 ${REG.avgDays}거래일 단순평균 시가총액으로 판정한 단순 추출이며, 실제 지정 요건 판정이 아닙니다. PBR·PER 분자는 ${REG.avgDays}일 평균 시총입니다. 시행까지 남은 일수는 ${REG.next.effectiveDate} 기준이며, 정확한 시행일은 확인이 필요합니다.`,
+    note:`2번(거래정지)과 3번(현행 기준 미달)에 해당하지 않는 종목만 표시합니다. 연속미달일수가 아니라 최근 ${REG.avgDays}거래일 단순평균 시가총액으로 판정한 단순 추출이며, 실제 지정 요건 판정이 아닙니다. 근접 종목까지 보기 위해 추출 범위는 코스피 ${REG.screen.KOSPI}억 / 코스닥 ${REG.screen.KOSDAQ}억 미만으로 넓혔고, "신규 기준 대비"는 신규 기준(${REG.next.KOSPI}억 / ${REG.next.KOSDAQ}억) 대비 값입니다. PBR·PER 분자는 ${REG.avgDays}일 평균 시총입니다. 시행까지 남은 일수는 ${REG.next.effectiveDate} 기준이며, 정확한 시행일은 확인이 필요합니다.`,
   },
 };
 const VIEW_KEYS = Object.keys(VIEWS);
