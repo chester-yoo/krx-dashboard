@@ -83,7 +83,7 @@ def update(codes, key, refresh_days=1):
         try:
             reports = fetch_recent_major_reports(key, corp_code, bgn_de, end_de)
         except Exception as e:
-            print(f"[disclosures] {code} 오류: {e}")
+            print(f"[disclosures] {code} 오류: {financials.redact(e)}")
             reports = (entry or {}).get("reports", [])
         cache[code] = {"reports": reports, "checked_at": today}
         checked += 1

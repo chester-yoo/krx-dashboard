@@ -261,8 +261,13 @@ def rebuild_financials(raw, years, latest):
     return financials, updated
 
 
+def redact(text):
+    """오류 메시지에 요청 URL이 들어가면 API 키가 그대로 찍히므로 가린다."""
+    return re.sub(r"crtfc_key=[^&\s'\"]+", "crtfc_key=***", str(text))
+
+
 def log(message):
-    print(message, flush=True)
+    print(redact(message), flush=True)
 
 
 def collect_batch(key, corp_codes, year, stats):

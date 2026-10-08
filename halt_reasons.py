@@ -200,7 +200,7 @@ def update(codes, key):
             try:
                 reason = find_reason(fetch_exchange_reports(key, corp_code, bgn_de, today))
             except Exception as e:
-                print(f"[halt_reasons] {code} 오류: {e}")
+                print(f"[halt_reasons] {code} 오류: {financials.redact(e)}")
                 reason = (entry or {}).get("reason")
             time.sleep(0.15)
         result[code] = {"reason": reason, "checked_at": today, "v": CACHE_VERSION}

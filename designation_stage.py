@@ -128,7 +128,7 @@ def update(codes, key):
             try:
                 stage = find_stage(fetch_exchange_reports(key, corp_code, bgn_de, today))
             except Exception as e:
-                print(f"[designation_stage] {code} 오류: {e}")
+                print(f"[designation_stage] {code} 오류: {financials.redact(e)}")
                 stage = (entry or {}).get("stage")
             time.sleep(0.15)
         result[code] = {"stage": stage, "checked_at": today, "v": CACHE_VERSION}

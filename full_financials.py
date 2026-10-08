@@ -52,7 +52,7 @@ ROW_KEYS = ("sj_div", "account_id", "account_nm", "account_detail", "thstrm_amou
 
 
 def log(message):
-    print(message, flush=True)
+    print(financials.redact(message), flush=True)
 
 
 def get_auth_key():
@@ -86,7 +86,7 @@ def sample(key):
             try:
                 status, message, rows = fetch_full(key, corp_code, year, fs_div)
             except Exception as e:
-                status, message, rows = "ERR", str(e), []
+                status, message, rows = "ERR", financials.redact(e), []
             elapsed = round(time.time() - started, 2)
             entry["calls"].append({"fs_div": fs_div, "status": status, "message": message, "rows": len(rows), "sec": elapsed})
             log(f"[full] {code} {fs_div}: status={status} rows={len(rows)} {elapsed}초")
@@ -154,7 +154,7 @@ def xbrl_sample(key):
                     facts.append({"el": f"{prefix}:{name}", "v": value.strip(), "period": ctx.get("period"), "members": ctx.get("members")})
                 entry["facts"] = facts
         except Exception as e:
-            entry["error"] = str(e)
+            entry["error"] = financials.redact(e)
         entry["sec"] = round(time.time() - started, 2)
         log(f"[xbrl] {code}: {entry.get('error') or str(len(entry.get('facts', []))) + '개 감가상각 관련 항목'} ({entry['sec']}초, {entry.get('bytes', 0)//1024}KB)")
         out["companies"][code] = entry
@@ -334,8 +334,14 @@ def select_notes_da(cands):
 def fetch_document_text(key, rcept_no):
     import io
     import zipfile
+    reason = ""
     for attempt in range(4):
-        resp = requests.get(API_BASE + "/document.xml", params={"crtfc_key": key, "rcept_no": rcept_no}, timeout=180)
+        try:
+            resp = requests.get(API_BASE + "/document.xml", params={"crtfc_key": key, "rcept_no": rcept_no}, timeout=180)
+        except requests.RequestException as e:  # 연결 끊김(SSL EOF 등)은 잠시 뒤 다시 받는다
+            reason = type(e).__name__
+            time.sleep(5 * (attempt + 1))
+            continue
         if resp.content[:2] == b"PK":
             break
         # zip 대신 오류 응답(XML)이 오면 DART 상태 메시지를 남기고 잠시 뒤 다시 받는다
@@ -530,7 +536,7 @@ def notes_sample(key):
                         continue
             entry["candidates"] = notes_depr_candidates(text)
         except Exception as e:
-            entry["error"] = str(e)
+            entry["error"] = financials.redact(e)
         entry["sec"] = round(time.time() - started, 2)
         log(f"[notes] {code}: {entry.get('error') or str(len(entry.get('candidates', []))) + '개 후보 행'} ({entry['sec']}초, {entry.get('bytes', 0)//1024}KB)")
         out["companies"][code] = entry
