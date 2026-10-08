@@ -358,6 +358,8 @@ def fetch_document_text(key, rcept_no):
         # zip 대신 오류 응답(XML)이 오면 DART 상태 메시지를 남기고 잠시 뒤 다시 받는다
         status = re.search(rb"<message>(.*?)</message>", resp.content)
         reason = status.group(1).decode("utf-8", "replace") if status else resp.content[:80].decode("utf-8", "replace")
+        if "점검" in reason:  # DART 원문 서비스 점검(주로 야간) 중에는 재시도해도 소용없으므로 바로 알린다
+            raise RuntimeError(f"DART 점검 중 ({reason.strip()})")
         time.sleep(5 * (attempt + 1))
     else:
         raise RuntimeError(f"원문 zip 아님 ({reason})")
@@ -564,6 +566,9 @@ def notes_raw(key, path=NOTES_RAW_PATH, keyword=RAW_KEYWORD):
                     errors += 1
                     if errors <= 30:
                         log(f"[raw] {code} 오류: {err}")
+                    if "점검" in err and not stop.is_set():
+                        stop.set()
+                        log("[raw] DART 원문 서비스 점검 중이라 저장 후 멈춥니다. 점검이 끝난 뒤 다시 실행하면 이어서 받습니다.")
                 if done and done % 200 == 0:
                     save()
                     el = time.time() - started
