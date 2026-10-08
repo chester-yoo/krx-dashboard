@@ -358,7 +358,7 @@ def fetch_document_text(key, rcept_no):
         raw = z.read(n)
         for enc in ("utf-8", "cp949"):
             try:
-                text += raw.decode(enc)
+                text += f"<!--FILE:{n}-->" + raw.decode(enc)  # 파일 경계 표시(첨부 감사보고서별 연결/별도 판정용)
                 break
             except UnicodeDecodeError:
                 continue
@@ -436,18 +436,47 @@ def doc_scope(text, current):
     return current
 
 
+FILE_MARK = re.compile(r"<!--FILE:([^>]*)-->")
+
+
+def file_scope(body):
+    """첨부 감사보고서 파일 하나의 연결/별도: 표지(앞부분)에 '연결재무제표'가 있으면 연결, 없으면 별도.
+    사업보고서 본문 파일(DOCUMENT-NAME에 사업보고서)은 제목 기준으로 판단하므로 빈 값."""
+    cover = body[:body.find("</COVER>")] if "</COVER>" in body[:20000] else body[:4000]
+    head = re.sub(r"\s|<[^>]+>", "", cover)
+    if "사업보고서" in head[:400] or "반기보고서" in head[:400] or "분기보고서" in head[:400]:
+        return ""
+    return "연결" if "연결재무제표" in head or "Consolidated" in cover else "별도"
+
+
 def notes_raw_tables(text):
+    """파일(사업보고서 본문, 연결 감사보고서, 별도 감사보고서)별로 나눠 읽고 결과를 합친다."""
+    parts = FILE_MARK.split(text)
+    if len(parts) == 1:
+        return notes_raw_tables_one(text, "")
+    tables, currencies = [], {}
+    for i in range(1, len(parts), 2):
+        body = parts[i + 1]
+        t, cur = notes_raw_tables_one(body, file_scope(body))
+        tables += t
+        for k, v in cur.items():
+            currencies[k] = currencies.get(k, 0) + v
+    return tables, currencies
+
+
+def notes_raw_tables_one(text, file_scope_value):
     """주석 구간에서 '상각'·'이자비용'이 들어간 표를 통째로(행 단위 셀 텍스트) 모은다. 선택 규칙은 로컬에서 정답과 대조하며 정한다.
     표마다 구간 제목·표 직전 문구·단위를 같이 남기고, 문서 전체의 통화 단위 표기 빈도도 센다."""
-    tables, section, last_unit, currencies, scope = [], "", None, {}, ""
+    tables, section, last_unit, currencies, scope = [], "", None, {}, file_scope_value
     for m in re.finditer(BLOCK, text, re.S | re.I):
         title, table, para = m.groups()
         if title is not None:
             section = cell_text(title)
-            scope = doc_scope(section, scope)
+            if not file_scope_value:
+                scope = doc_scope(section, scope)
             continue
         chunk = cell_text(para if para is not None else table)
-        if para is not None:
+        if para is not None and not file_scope_value:
             scope = doc_scope(chunk, scope)
         for cur in CURRENCY_UNIT.findall(chunk):
             currencies[cur.upper()] = currencies.get(cur.upper(), 0) + 1
