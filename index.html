@@ -68,14 +68,16 @@
   .card .lbl{font-size:12px;color:var(--ink-soft);margin-top:2px;}
   .card.tone-amber .num{color:#7a4e05;} .card.tone-dark .num{color:#5c3b03;}
 
-  .dist{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 16px;display:flex;flex-direction:column;gap:10px;}
-  .dist-bar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line);}
+  .dist{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 14px;display:flex;flex-direction:column;gap:6px;overflow:auto;}
+  .dist-bar{display:flex;flex:0 0 12px;height:12px;border-radius:7px;overflow:hidden;background:var(--line);}
   .dist-bar span{display:block;height:100%;border-right:2px solid #fff;}
   .dist-legend{display:flex;flex-wrap:wrap;gap:6px;}
-  .dist-legend button{display:inline-flex;align-items:center;gap:6px;background:#fff;color:var(--ink);border:1px solid var(--line);font-weight:500;padding:4px 10px;border-radius:14px;}
+  .dist-legend button{display:inline-flex;align-items:center;gap:6px;background:#fff;color:var(--ink);border:1px solid var(--line);font-weight:500;padding:1px 9px;font-size:12px;border-radius:14px;}
   .dist-legend button.on{border-color:var(--blue);background:#f7f9fd;}
   .dist-legend i{width:10px;height:10px;border-radius:2px;display:inline-block;}
   .halt-top{display:grid;grid-template-columns:170px 1fr;gap:10px;margin-bottom:14px;}
+  /* 화면마다 표 시작 위치를 같게: 상단 카드 영역 높이 고정 */
+  .cards, .halt-top{height:86px;} .cards .card, .halt-top > *{height:86px;box-sizing:border-box;}
 
   .toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
   .toolbar .count{font-size:13px;color:var(--ink-soft);}
@@ -117,12 +119,13 @@
   td.negb{color:var(--neg);font-weight:700;}
   td.mute{color:var(--ink-mute);}
   td.key{font-weight:700;}
-  .tablewrap{max-height:600px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:#fff;}
+  .tablewrap{height:max(420px, calc(100vh - 330px));overflow:auto;border:1px solid var(--line);border-radius:6px;background:#fff;}
+  tbody tr{height:37px;}
+  tbody td .badge{line-height:1.35;}
   body[data-view="all"] .side-panel{flex:0 0 260px;max-width:260px;}
   body[data-view="all"] th[data-key="per"], body[data-view="all"] th[data-key="evEbitda"]{width:110px;}
   body[data-view="all"] #filterPanel .controls-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));}
   body[data-view="all"] #filterPanel .field input, body[data-view="all"] #filterPanel .field select{width:100%;}
-  body[data-view="all"] .tablewrap{max-height:400px;}
   .tbl-main{flex:1 1 auto;}
   #stockTable{width:100%;}
   thead tr.hf input, thead tr.hf select{width:100%;min-width:64px;font-size:11.5px;padding:3px 4px;border:1px solid var(--line-strong);border-radius:3px;font-family:inherit;background:#fff;color:var(--ink);}
@@ -192,6 +195,8 @@
     .head-right{align-items:flex-start;}
     .asof-mobile{display:block;}
     .halt-top{grid-template-columns:1fr;}
+    .cards, .halt-top, .cards .card, .halt-top > *{height:auto;}
+    .tablewrap{height:70vh;}
     .tbl-area{flex-direction:column;}
     .side-panel{max-width:none;width:100%;}
     .field input[type=text]{width:100%;}
@@ -517,7 +522,7 @@ const VIEWS = {
     nav:'전체 상장사', sub:'코스피·코스닥 전 종목',
     title:'전체 상장사', desc:'{ASOF}(데이터 업데이트 일자) 기준 코스피·코스닥 전 종목',
     filters:[...BASE_FILTERS, {id:'capMin', label:'시가총액 최소(억원)', type:'number', ph:'예: 100'}, {id:'capMax', label:'시가총액 최대(억원)', type:'number', ph:'예: 500'}],
-    defaults:{}, sort:['cap',-1], side:true,
+    defaults:{}, sort:['cap',-1], side:true, headerFilters:true, noPanel:true,
     base:s=>true,
     basis:s=>s.latest,
     cols:['name','code','mkt','ind','cap','avg','px','per','evEbitda'], colOpts:{per:{ctr:true}, evEbitda:{ctr:true}},
@@ -527,7 +532,7 @@ const VIEWS = {
         on:String(f.capMin??'')===String(lo??'') && String(f.capMax??'')===String(hi??'') && (lo!=null||hi!=null),
         apply:f=>{ if(lo==null) delete f.capMin; else f.capMin=String(lo); if(hi==null) delete f.capMax; else f.capMax=String(hi); f.capMaxExcl = hi!=null; }})),
     ],
-    note:`시가총액은 최신 거래일 기준(억원)입니다. 상단 구간 카드를 누르면 해당 시가총액 구간으로 필터링됩니다(상한 미만). 오른쪽 업종 분포는 현재 필터 결과 기준이며, 업종을 누르면 업종 필터가 적용됩니다.`,
+    note:`시표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다(숫자 컬럼은 "범위" 버튼). 가총액은 최신 거래일 기준(억원)입니다. 상단 구간 카드를 누르면 해당 시가총액 구간으로 필터링됩니다(상한 미만). 오른쪽 업종 분포는 현재 필터 결과 기준이며, 업종을 누르면 업종 필터가 적용됩니다.`,
   },
   halt:{
     nav:'거래정지', sub:'현재 거래정지 종목',
@@ -545,7 +550,7 @@ const VIEWS = {
     filters:[...BASE_FILTERS, {id:'streakMin', label:'연속 미달 N일 이상', type:'number'},
       {id:'status', label:'미달 단계', type:'select', opts:STATUS_OPTS},
       {id:'stageF', label:'공시 단계', type:'select', opts:STAGE_OPTS}],
-    finFilters:true,
+    headerFilters:true, noPanel:true,
     defaults:{}, sort:['streak',-1],
     base:s=>!s.halted && s.streak>=1, hideStatusInFull:true,
     basis:s=>s.latest,
@@ -557,14 +562,14 @@ const VIEWS = {
       {label:`${REG.current.streakDays}일 이상 연속 미달`, n:list.filter(s=>s.status==='crit').length, tone:'dark', on:f.status==='crit', apply:f=>{ f.status='crit'; delete f.stageF; }},
       {label:'거래소 공시 단계 확인', n:list.filter(s=>s.stage).length, on:f.stageF==='__any__' && !f.status, apply:f=>{ f.stageF='__any__'; delete f.status; }},
     ],
-    note:`판정 기준: 코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억 미만이 ${REG.current.streakDays}거래일 연속되면 관리종목 지정 요건에 해당하고, 지정 후 90거래일 내 45거래일 연속 미회복 시 상장폐지됩니다. "미달 단계"는 이 대시보드가 연속 미달 일수로 계산한 값이며 KRX의 실제 관리종목 지정 여부가 아닙니다. 이미 거래정지된 종목은 제외합니다. "공시 단계"는 DART 거래소공시 제목에서 관리종목 관련 공시(우려·예고, 상장폐지 우려 안내, 지정 사유 발생, 지정, 해제)를 찾은 대사용 값이며, 공시가 없으면 비워 둡니다. PBR·PER 분자는 최신 시가총액입니다.`,
+    note:`판표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다(숫자 컬럼은 "범위" 버튼). 정 기준: 코스피 ${REG.current.KOSPI}억 / 코스닥 ${REG.current.KOSDAQ}억 미만이 ${REG.current.streakDays}거래일 연속되면 관리종목 지정 요건에 해당하고, 지정 후 90거래일 내 45거래일 연속 미회복 시 상장폐지됩니다. "미달 단계"는 이 대시보드가 연속 미달 일수로 계산한 값이며 KRX의 실제 관리종목 지정 여부가 아닙니다. 이미 거래정지된 종목은 제외합니다. "공시 단계"는 DART 거래소공시 제목에서 관리종목 관련 공시(우려·예고, 상장폐지 우려 안내, 지정 사유 발생, 지정, 해제)를 찾은 대사용 값이며, 공시가 없으면 비워 둡니다. PBR·PER 분자는 최신 시가총액입니다.`,
   },
   new:{
     nav:'사전검토', sub:`${REG.next.effective.replace('-','.')} 상향 대비`,
     title:`신규 기준 사전검토 (${REG.next.effective.replace('-','.')})`,
     desc:`거래정지·현행 기준 미달이 아닌 종목 중, 최근 ${REG.avgDays}거래일 평균 시가총액이 신규 기준(코스피 ${REG.next.KOSPI}억 / 코스닥 ${REG.next.KOSDAQ}억) 미만 또는 근접한 종목`,
     filters:[...BASE_FILTERS],
-    finFilters:true, dday:true,
+    headerFilters:true, noPanel:true, dday:true,
     defaults:{}, sort:['gapNew',1],
     base:s=>!s.halted && s.streak===0 && s.avg!=null && s.avg < thr(s.m,'screen'),
     basis:s=>s.avg,
@@ -573,7 +578,7 @@ const VIEWS = {
       {label:'사전검토 대상', n:list.length, on:!f.gapBand, apply:f=>{ delete f.gapBand; }},
       ...Object.entries(GAP_BANDS).map(([k,[lbl]])=>({label:`신규 기준 대비 ${lbl}`, n:list.filter(s=>gapInBand(s.gapNew,k)).length, tone:k==='a'?'dark':(k==='b'?'amber':''), on:f.gapBand===k, apply:f=>{ f.gapBand=k; }})),
     ],
-    note:`2번(거래정지)과 3번(현행 기준 미달)에 해당하지 않는 종목만 표시합니다. 연속미달일수가 아니라 최근 ${REG.avgDays}거래일 단순평균 시가총액으로 판정한 단순 추출이며, 실제 지정 요건 판정이 아닙니다. 근접 종목까지 보기 위해 추출 범위는 코스피 ${REG.screen.KOSPI}억 / 코스닥 ${REG.screen.KOSDAQ}억 미만으로 넓혔고, "신규 기준 대비"는 신규 기준(${REG.next.KOSPI}억 / ${REG.next.KOSDAQ}억) 대비 값입니다. PBR·PER 분자는 ${REG.avgDays}일 평균 시총입니다. 시행까지 남은 일수는 ${REG.next.effectiveDate} 기준이며, 정확한 시행일은 확인이 필요합니다.`,
+    note:`2표 헤더 아래 칸에서 컬럼별로 바로 필터링할 수 있습니다(숫자 컬럼은 "범위" 버튼). 번(거래정지)과 3번(현행 기준 미달)에 해당하지 않는 종목만 표시합니다. 연속미달일수가 아니라 최근 ${REG.avgDays}거래일 단순평균 시가총액으로 판정한 단순 추출이며, 실제 지정 요건 판정이 아닙니다. 근접 종목까지 보기 위해 추출 범위는 코스피 ${REG.screen.KOSPI}억 / 코스닥 ${REG.screen.KOSDAQ}억 미만으로 넓혔고, "신규 기준 대비"는 신규 기준(${REG.next.KOSPI}억 / ${REG.next.KOSDAQ}억) 대비 값입니다. PBR·PER 분자는 ${REG.avgDays}일 평균 시총입니다. 시행까지 남은 일수는 ${REG.next.effectiveDate} 기준이며, 정확한 시행일은 확인이 필요합니다.`,
   },
 };
 const VIEW_KEYS = Object.keys(VIEWS);
@@ -885,16 +890,18 @@ function renderPager(pages){
   const p = st.page, nums = [];
   for(let i=0;i<pages;i++){ if(i===0 || i===pages-1 || Math.abs(i-p)<=2) nums.push(i); else if(nums[nums.length-1]!=='…') nums.push('…'); }
   el.innerHTML = `<button data-pg="${p-1}" ${p===0?'disabled':''} aria-label="이전 쪽">‹</button>` + nums.map(i=>i==='…'?'<span>…</span>':`<button data-pg="${i}" class="${i===p?'on':''}" ${i===p?'aria-current="page"':''}>${i+1}</button>`).join('') + `<button data-pg="${p+1}" ${p===pages-1?'disabled':''} aria-label="다음 쪽">›</button>`;
-  el.querySelectorAll('[data-pg]').forEach(b=>b.addEventListener('click', ()=>{ st.page = Number(b.dataset.pg); renderResults(false); document.querySelector('.tablewrap').scrollTop = 0; }));
+  el.querySelectorAll('[data-pg]').forEach(b=>b.addEventListener('click', ()=>{ st.page = Number(b.dataset.pg); renderResults(false); resetScroll(); }));
 }
 function onFilterChange(rebuildHead=false){
   viewState[currentView].page = 0;
   renderCards(); renderChips(); renderResults(rebuildHead);
 }
+function resetScroll(){ document.querySelector('.tablewrap').scrollTop = 0; window.scrollTo(0, 0); }
 function renderView(){
   openPop = null;
   document.body.dataset.view = currentView;
   renderNav(); renderHeader(); renderCards(); renderFilterPanel(); renderNote(); renderChips(); renderResults(true);
+  resetScroll();
 }
 
 /* ---------- 상세 패널 (오른쪽 슬라이드) ---------- */
