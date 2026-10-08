@@ -447,19 +447,25 @@ def notes_raw_tables(text):
 
 
 def notes_raw(key):
-    """비금융 전 종목의 사업보고서 원문에서 상각 관련 주석 표를 원본 그대로 수집 (out/notes_raw.json.gz, 워크플로 아티팩트)."""
+    """비금융 전 종목의 사업보고서 원문에서 상각 관련 주석 표를 원본 그대로 수집 (out/notes_raw.json.gz, 워크플로 아티팩트).
+    200개마다 중간 저장하고, 시간 제한에 걸리면 저장 후 끝낸다(아티팩트는 실패·중단 시에도 올라간다).
+    out/notes_raw.json.gz가 이미 있으면 그 종목은 건너뛴다(이전 아티팩트를 받아 두면 이어받기)."""
     import gzip
     corp_map = financials.get_corp_code_map(key)
     accounts = json.load(open(ACCOUNTS_PATH, encoding="utf-8"))
     industry = json.load(open(BASE_DIR / "data" / "industry.json", encoding="utf-8"))
     xbrl = json.load(open(XBRL_DEPR_PATH, encoding="utf-8")) if XBRL_DEPR_PATH.exists() else {}
     known = json.load(open(NOTES_DEPR_PATH, encoding="utf-8")) if NOTES_DEPR_PATH.exists() else {}
+    store = json.load(gzip.open(NOTES_RAW_PATH, "rt", encoding="utf-8")) if NOTES_RAW_PATH.exists() else {}
     fin = re.compile(r"은행|보험|증권|창업투자|기타금융|카드|캐피탈|금융")
-    targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c) and not fin.search(industry.get(c, ""))]
-    log(f"[raw] 대상 {len(targets)}개 종목, 동시 {WORKERS}건")
-    store, started, done, errors = {}, time.time(), 0, 0
+    targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c) and not fin.search(industry.get(c, "")) and c not in store]
+    log(f"[raw] 대상 {len(targets)}개 종목 (이미 받은 {len(store)}개 제외), 동시 {WORKERS}건")
+    started, done, errors = time.time(), 0, 0
+    lock, stop = threading.Lock(), threading.Event()
 
     def work(code):
+        if stop.is_set():
+            return code, None, "skipped"
         try:
             year = str(accounts[code]["y"])
             rcept_no = (known.get(code) or {}).get("rcept_no") or (xbrl.get(code) or {}).get("rcept_no") or find_annual_report(key, corp_map[code], year)
@@ -470,22 +476,31 @@ def notes_raw(key):
         except Exception as e:
             return code, None, str(e)
 
+    def save():
+        NOTES_RAW_PATH.parent.mkdir(exist_ok=True)
+        with gzip.open(NOTES_RAW_PATH, "wt", encoding="utf-8") as f:
+            json.dump(store, f, ensure_ascii=False, separators=(",", ":"))
+
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         for fut in as_completed([pool.submit(work, c) for c in targets]):
             code, result, err = fut.result()
-            if result is not None:
-                store[code] = result
-                done += 1
-            else:
-                errors += 1
-                log(f"[raw] {code} 오류: {err}")
-            if done and done % 200 == 0:
-                el = time.time() - started
-                log(f"[raw] 진행 {done}/{len(targets)} · {el/60:.1f}분 · 남은 예상 {(len(targets)-done)*el/done/60:.0f}분")
-    NOTES_RAW_PATH.parent.mkdir(exist_ok=True)
-    with gzip.open(NOTES_RAW_PATH, "wt", encoding="utf-8") as f:
-        json.dump(store, f, ensure_ascii=False, separators=(",", ":"))
-    log(f"[raw] 완료: {done}개 수집, 오류 {errors}건, {NOTES_RAW_PATH.stat().st_size/1e6:.1f}MB, 총 {(time.time()-started)/60:.1f}분")
+            with lock:
+                if result is not None:
+                    store[code] = result
+                    done += 1
+                elif err != "skipped":
+                    errors += 1
+                    if errors <= 30:
+                        log(f"[raw] {code} 오류: {err}")
+                if done and done % 200 == 0:
+                    save()
+                    el = time.time() - started
+                    log(f"[raw] 진행 {done}/{len(targets)} · 오류 {errors} · {el/60:.1f}분 · 남은 예상 {(len(targets)-done)*el/done/60:.0f}분")
+                if not stop.is_set() and time.time() - started > TIME_BUDGET_SEC:
+                    stop.set()
+                    log("[raw] 시간 제한에 도달해 저장 후 종료합니다.")
+    save()
+    log(f"[raw] 완료: 이번 실행 {done}개 수집, 오류 {errors}건, 누적 {len(store)}개, {NOTES_RAW_PATH.stat().st_size/1e6:.1f}MB, 총 {(time.time()-started)/60:.1f}분")
 
 
 def notes_sample(key):
