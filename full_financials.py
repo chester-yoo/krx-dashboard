@@ -331,7 +331,16 @@ def select_notes_da(cands):
 def fetch_document_text(key, rcept_no):
     import io
     import zipfile
-    resp = requests.get(API_BASE + "/document.xml", params={"crtfc_key": key, "rcept_no": rcept_no}, timeout=180)
+    for attempt in range(4):
+        resp = requests.get(API_BASE + "/document.xml", params={"crtfc_key": key, "rcept_no": rcept_no}, timeout=180)
+        if resp.content[:2] == b"PK":
+            break
+        # zip 대신 오류 응답(XML)이 오면 DART 상태 메시지를 남기고 잠시 뒤 다시 받는다
+        status = re.search(rb"<message>(.*?)</message>", resp.content)
+        reason = status.group(1).decode("utf-8", "replace") if status else resp.content[:80].decode("utf-8", "replace")
+        time.sleep(5 * (attempt + 1))
+    else:
+        raise RuntimeError(f"원문 zip 아님 ({reason})")
     z = zipfile.ZipFile(io.BytesIO(resp.content))
     text = ""
     for n in z.namelist():
