@@ -429,6 +429,8 @@ def notes_full(key):
 
 NOTES_RAW_PATH = BASE_DIR / "out" / "notes_raw.json.gz"
 RAW_KEYWORD = re.compile(r"상각|이자비용")  # 감가상각비 표 + 이자비용(금융원가 주석) 표
+NOTES_FIN_PATH = BASE_DIR / "out" / "notes_fin.json.gz"
+FIN_KEYWORD = re.compile(r"기타\s*(유동|비유동)?\s*금융\s*(자산|부채)")  # 순부채용: 기타금융자산·기타금융부채 내역 표
 RAW_SKIP = re.compile(r"대손상각|상각후원가")
 CURRENCY_UNIT = re.compile(r"단위\s*[:：]?\s*(?:천|백만|억)?\s*(원|USD|US\$|달러|위안|RMB|CNY|엔|JPY|홍콩달러|HKD|싱가포르달러|SGD|유로|EUR)", re.I)
 
@@ -458,22 +460,22 @@ def file_scope(body):
     return "연결" if "연결재무제표" in head or "Consolidated" in cover else "별도"
 
 
-def notes_raw_tables(text):
+def notes_raw_tables(text, keyword=RAW_KEYWORD):
     """파일(사업보고서 본문, 연결 감사보고서, 별도 감사보고서)별로 나눠 읽고 결과를 합친다."""
     parts = FILE_MARK.split(text)
     if len(parts) == 1:
-        return notes_raw_tables_one(text, "")
+        return notes_raw_tables_one(text, "", keyword)
     tables, currencies = [], {}
     for i in range(1, len(parts), 2):
         body = parts[i + 1]
-        t, cur = notes_raw_tables_one(body, file_scope(body))
+        t, cur = notes_raw_tables_one(body, file_scope(body), keyword)
         tables += t
         for k, v in cur.items():
             currencies[k] = currencies.get(k, 0) + v
     return tables, currencies
 
 
-def notes_raw_tables_one(text, file_scope_value):
+def notes_raw_tables_one(text, file_scope_value, keyword=RAW_KEYWORD):
     """주석 구간에서 '상각'·'이자비용'이 들어간 표를 통째로(행 단위 셀 텍스트) 모은다. 선택 규칙은 로컬에서 정답과 대조하며 정한다.
     표마다 구간 제목·표 직전 문구·단위를 같이 남기고, 문서 전체의 통화 단위 표기 빈도도 센다."""
     tables, section, last_unit, currencies, scope = [], "", None, {}, file_scope_value
@@ -494,7 +496,9 @@ def notes_raw_tables_one(text, file_scope_value):
             if u:
                 last_unit = u.group(0)
             continue
-        if "주석" not in section or not RAW_KEYWORD.search(RAW_SKIP.sub("", chunk)):
+        before = cell_text(text[max(0, m.start() - 400):m.start()])[-150:]
+        # 표 안에 단어가 없어도 바로 앞 문구가 '기타금융자산의 내역은 ...'이면 해당 표로 본다
+        if "주석" not in section or not (keyword.search(RAW_SKIP.sub("", chunk)) or keyword.search(before[-80:])):
             continue
         unit_in = UNIT.search(chunk) or CURRENCY_UNIT.search(chunk)
         rows = []
@@ -504,12 +508,12 @@ def notes_raw_tables_one(text, file_scope_value):
                 rows.append(cells[:14])
         # 첨부 감사보고서의 주석은 제목이 그냥 '주석'이라 연결/별도를 표지 문구(scope)로 구분해 앞에 붙인다
         sec = section if ("재무제표" in section or not scope) else f"{scope} {section}"
-        tables.append({"sec": sec[:40], "before": cell_text(text[max(0, m.start() - 400):m.start()])[-150:],
+        tables.append({"sec": sec[:40], "before": before,
                        "unit": unit_in.group(0) if unit_in else last_unit, "rows": rows})
     return tables, currencies
 
 
-def notes_raw(key):
+def notes_raw(key, path=NOTES_RAW_PATH, keyword=RAW_KEYWORD):
     """비금융 전 종목의 사업보고서 원문에서 상각 관련 주석 표를 원본 그대로 수집 (out/notes_raw.json.gz, 워크플로 아티팩트).
     200개마다 중간 저장하고, 시간 제한에 걸리면 저장 후 끝낸다(아티팩트는 실패·중단 시에도 올라간다).
     out/notes_raw.json.gz가 이미 있으면 그 종목은 건너뛴다(이전 아티팩트를 받아 두면 이어받기)."""
@@ -519,7 +523,12 @@ def notes_raw(key):
     industry = json.load(open(BASE_DIR / "data" / "industry.json", encoding="utf-8"))
     xbrl = json.load(open(XBRL_DEPR_PATH, encoding="utf-8")) if XBRL_DEPR_PATH.exists() else {}
     known = json.load(open(NOTES_DEPR_PATH, encoding="utf-8")) if NOTES_DEPR_PATH.exists() else {}
-    store = json.load(gzip.open(NOTES_RAW_PATH, "rt", encoding="utf-8")) if NOTES_RAW_PATH.exists() else {}
+    store = json.load(gzip.open(path, "rt", encoding="utf-8")) if path.exists() else {}
+    # 감가상각비 수집 때 주석이 있는 것으로 확인된 접수번호(정정본 보완 포함)를 먼저 쓴다
+    if path != NOTES_RAW_PATH and NOTES_RAW_PATH.exists():
+        for c, v in json.load(gzip.open(NOTES_RAW_PATH, "rt", encoding="utf-8")).items():
+            if v.get("tables") and v.get("rcept_no"):
+                known[c] = {"rcept_no": v["rcept_no"]}
     fin = re.compile(r"은행|보험|증권|창업투자|기타금융|카드|캐피탈|금융")
     targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c) and not fin.search(industry.get(c, "")) and c not in store]
     log(f"[raw] 대상 {len(targets)}개 종목 (이미 받은 {len(store)}개 제외), 동시 {WORKERS}건")
@@ -534,14 +543,14 @@ def notes_raw(key):
             rcept_no = (known.get(code) or {}).get("rcept_no") or (xbrl.get(code) or {}).get("rcept_no") or find_annual_report(key, corp_map[code], year)
             if not rcept_no:
                 return code, {"rcept_no": None}, None
-            tables, currencies = notes_raw_tables(fetch_document_text(key, rcept_no))
+            tables, currencies = notes_raw_tables(fetch_document_text(key, rcept_no), keyword)
             return code, {"rcept_no": rcept_no, "cur": currencies, "tables": tables}, None
         except Exception as e:
             return code, None, str(e)
 
     def save():
-        NOTES_RAW_PATH.parent.mkdir(exist_ok=True)
-        with gzip.open(NOTES_RAW_PATH, "wt", encoding="utf-8") as f:
+        path.parent.mkdir(exist_ok=True)
+        with gzip.open(path, "wt", encoding="utf-8") as f:
             json.dump(store, f, ensure_ascii=False, separators=(",", ":"))
 
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
@@ -563,7 +572,7 @@ def notes_raw(key):
                     stop.set()
                     log("[raw] 시간 제한에 도달해 저장 후 종료합니다.")
     save()
-    log(f"[raw] 완료: 이번 실행 {done}개 수집, 오류 {errors}건, 누적 {len(store)}개, {NOTES_RAW_PATH.stat().st_size/1e6:.1f}MB, 총 {(time.time()-started)/60:.1f}분")
+    log(f"[raw] 완료: 이번 실행 {done}개 수집, 오류 {errors}건, 누적 {len(store)}개, {path.stat().st_size/1e6:.1f}MB, 총 {(time.time()-started)/60:.1f}분")
 
 
 def notes_raw_retry(key):
@@ -771,6 +780,8 @@ if __name__ == "__main__":
         notes_full(key)
     elif cmd == "notes_raw":
         notes_raw(key)
+    elif cmd == "notes_fin":
+        notes_raw(key, NOTES_FIN_PATH, FIN_KEYWORD)
     elif cmd == "notes_raw_retry":
         notes_raw_retry(key)
     elif cmd == "currency":
