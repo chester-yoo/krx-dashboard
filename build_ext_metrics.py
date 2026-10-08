@@ -38,7 +38,7 @@ CASH_NAME = re.compile(r"^현금및현금성자산$|^현금 및 현금성자산$
 STFIN_NAME = re.compile(r"단기금융상품|단기금융자산")
 DEBT_NAME = re.compile(r"차입금|사채|리스부채|차입부채")
 DEBT_EXCLUDE = re.compile(r"할인|할증|조정|발행비|상환|이자|미지급|충당")
-DA_NAME = re.compile(r"감가상각|무형자산.*상각|사용권자산.*상각|투자부동산.*상각")
+DA_NAME = re.compile(r"감가상각|(무형|유형|사용권|생물|투자부동산)\S*상각")
 DA_EXCLUDE = re.compile(r"대손|상각후원가|할인|할증|차금|손상|누계")
 OP_NAME = re.compile(r"^영업이익|^영업손실|^영업이익\(손실\)")
 OCF_ID = "ifrs-full_CashFlowsFromUsedInOperatingActivities"
@@ -79,21 +79,19 @@ def sum_distinct(rows, pred):
     return total if hit else None
 
 
-def body_da(rows):
-    """본문 감가상각비: 현금흐름표 조정 항목 우선, 없으면 손익계산서. 계정 종류별로 한 번씩 합산."""
-    for sj in (("CF",), ("IS", "CIS")):
-        picked = {}
-        for r in rows:
-            if r[0] not in sj or r[3] is None:
-                continue
-            name = r[2]
-            if not DA_NAME.search(name) or DA_EXCLUDE.search(name):
-                continue
-            norm = re.sub(r"\s|에 ?대한|조정|,.*$|\(.*\)", "", name)
-            picked.setdefault(norm, abs(r[3]))
-        if picked:
-            return sum(picked.values())
-    return None
+def body_da(rows, sources=("CF",)):
+    """본문 감가상각비: 현금흐름표 조정 항목의 감가상각·상각 계정을 모두 더한다(유형·사용권·투자부동산·생물자산·무형).
+    괄호 안 자산 구분(예: 감가상각비(유형자산)/(투자부동산))은 서로 다른 항목이므로 지우지 않는다.
+    손익계산서 값은 판관비 몫만 있는 경우가 많아(매출원가 몫 누락) 기본으로 쓰지 않는다."""
+    picked = {}
+    for r in rows:
+        if r[0] not in sources or r[3] is None:
+            continue
+        name = r[2]
+        if not DA_NAME.search(name) or DA_EXCLUDE.search(name):
+            continue
+        picked.setdefault(re.sub(r"\s|에 ?대한|조정", "", name), abs(r[3]))
+    return sum(picked.values()) if picked else None
 
 
 def xbrl_da(facts, year):

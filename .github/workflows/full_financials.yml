@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "sample (표본 10개사) / full (전체) / xbrl_sample (XBRL 주석 감가상각 표본) / xbrl (XBRL 감가상각 전체) / notes_sample (원문 주석 감가상각 표본) / notes (원문 주석 감가상각 전체)"
+        description: "sample (표본 10개사) / full (전체) / xbrl_sample (XBRL 주석 감가상각 표본) / xbrl (XBRL 감가상각 전체) / notes_sample (원문 주석 감가상각 표본) / notes (원문 주석 감가상각 전체) / notes_raw (상각 관련 주석 표 원본 전체 → 아티팩트)"
         required: true
         default: sample
 
@@ -30,6 +30,14 @@ jobs:
         env:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
         run: python full_financials.py ${{ inputs.mode }}
+
+      - name: Upload raw notes tables
+        if: inputs.mode == 'notes_raw'
+        uses: actions/upload-artifact@v4
+        with:
+          name: notes_raw
+          path: out/notes_raw.json.gz
+          retention-days: 30
 
       - name: Commit and push if changed
         run: |

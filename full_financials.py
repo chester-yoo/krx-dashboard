@@ -194,8 +194,8 @@ def xbrl_full(key):
     corp_map = financials.get_corp_code_map(key)
     accounts = json.load(open(ACCOUNTS_PATH, encoding="utf-8"))
     store = json.load(open(XBRL_DEPR_PATH, encoding="utf-8")) if XBRL_DEPR_PATH.exists() else {}
-    has_depr = lambda rows: any(re.search(r"감가상각|상각비", r[2] or "") or "Depreciation" in (r[1] or "") for r in rows)
-    targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c) and not has_depr(v["rows"]) and c not in store]
+    from build_ext_metrics import body_da  # 대손상각비·감가상각누계액을 본문 감가상각비로 오인하지 않도록 계산 로직과 같은 기준을 쓴다
+    targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c) and body_da(v["rows"]) is None and c not in store]
     log(f"[xbrl] 대상 {len(targets)}개 종목 (본문에 감가상각비 없는 종목, 이미 받은 {len(store)}개 제외), 동시 {WORKERS}건")
     started = time.time()
     lock = threading.Lock()
@@ -359,8 +359,8 @@ def notes_full(key):
     accounts = json.load(open(ACCOUNTS_PATH, encoding="utf-8"))
     xbrl = json.load(open(XBRL_DEPR_PATH, encoding="utf-8")) if XBRL_DEPR_PATH.exists() else {}
     store = json.load(open(NOTES_DEPR_PATH, encoding="utf-8")) if NOTES_DEPR_PATH.exists() else {}
-    has_depr = lambda rows: any(re.search(r"감가상각|상각비", r[2] or "") or "Depreciation" in (r[1] or "") for r in rows)
-    targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c) and not has_depr(v["rows"]) and c not in store]
+    from build_ext_metrics import body_da  # 대손상각비·감가상각누계액을 본문 감가상각비로 오인하지 않도록 계산 로직과 같은 기준을 쓴다
+    targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c) and body_da(v["rows"]) is None and c not in store]
     log(f"[notes] 대상 {len(targets)}개 종목 (본문에 감가상각비 없는 종목, 이미 받은 {len(store)}개 제외), 동시 {WORKERS}건")
     started = time.time()
     lock = threading.Lock()
@@ -405,6 +405,84 @@ def notes_full(key):
                     log("[notes] 시간 제한에 도달해 남은 종목은 다음 실행에서 이어서 받습니다.")
     save()
     log(f"[notes] 완료: 이번 실행 {done}개 조회, 추출 {found}개, 오류 {errors}건, 총 {(time.time()-started)/60:.1f}분")
+
+
+NOTES_RAW_PATH = BASE_DIR / "out" / "notes_raw.json.gz"
+RAW_KEYWORD = re.compile(r"상각")
+RAW_SKIP = re.compile(r"대손상각|상각후원가")
+CURRENCY_UNIT = re.compile(r"단위\s*[:：]?\s*(?:천|백만|억)?\s*(원|USD|US\$|달러|위안|RMB|CNY|엔|JPY|홍콩달러|HKD|싱가포르달러|SGD|유로|EUR)", re.I)
+
+
+def notes_raw_tables(text):
+    """주석 구간에서 '상각'이 들어간 표를 통째로(행 단위 셀 텍스트) 모은다. 선택 규칙은 로컬에서 정답과 대조하며 정한다.
+    표마다 구간 제목·표 직전 문구·단위를 같이 남기고, 문서 전체의 통화 단위 표기 빈도도 센다."""
+    tables, section, last_unit, currencies = [], "", None, {}
+    for m in re.finditer(r"<TITLE[^>]*>(.*?)</TITLE>|<TABLE[^>]*>(.*?)</TABLE>|<P[^>]*>(.*?)</P>", text, re.S | re.I):
+        title, table, para = m.groups()
+        if title is not None:
+            section = cell_text(title)
+            continue
+        chunk = cell_text(para if para is not None else table)
+        for cur in CURRENCY_UNIT.findall(chunk):
+            currencies[cur.upper()] = currencies.get(cur.upper(), 0) + 1
+        if para is not None:
+            u = UNIT.search(chunk) or CURRENCY_UNIT.search(chunk)
+            if u:
+                last_unit = u.group(0)
+            continue
+        if "주석" not in section or not RAW_KEYWORD.search(RAW_SKIP.sub("", chunk)):
+            continue
+        unit_in = UNIT.search(chunk) or CURRENCY_UNIT.search(chunk)
+        rows = []
+        for row in re.findall(r"<TR[^>]*>(.*?)</TR>", table, re.S | re.I)[:80]:
+            cells = [cell_text(c)[:40] for c in re.findall(r"<(?:TD|TE|TH|TU)[^>]*>(.*?)</(?:TD|TE|TH|TU)>", row, re.S | re.I)]
+            if any(cells):
+                rows.append(cells[:14])
+        tables.append({"sec": section[:40], "before": cell_text(text[max(0, m.start() - 400):m.start()])[-150:],
+                       "unit": unit_in.group(0) if unit_in else last_unit, "rows": rows})
+    return tables, currencies
+
+
+def notes_raw(key):
+    """비금융 전 종목의 사업보고서 원문에서 상각 관련 주석 표를 원본 그대로 수집 (out/notes_raw.json.gz, 워크플로 아티팩트)."""
+    import gzip
+    corp_map = financials.get_corp_code_map(key)
+    accounts = json.load(open(ACCOUNTS_PATH, encoding="utf-8"))
+    industry = json.load(open(BASE_DIR / "data" / "industry.json", encoding="utf-8"))
+    xbrl = json.load(open(XBRL_DEPR_PATH, encoding="utf-8")) if XBRL_DEPR_PATH.exists() else {}
+    known = json.load(open(NOTES_DEPR_PATH, encoding="utf-8")) if NOTES_DEPR_PATH.exists() else {}
+    fin = re.compile(r"은행|보험|증권|창업투자|기타금융|카드|캐피탈|금융")
+    targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c) and not fin.search(industry.get(c, ""))]
+    log(f"[raw] 대상 {len(targets)}개 종목, 동시 {WORKERS}건")
+    store, started, done, errors = {}, time.time(), 0, 0
+
+    def work(code):
+        try:
+            year = str(accounts[code]["y"])
+            rcept_no = (known.get(code) or {}).get("rcept_no") or (xbrl.get(code) or {}).get("rcept_no") or find_annual_report(key, corp_map[code], year)
+            if not rcept_no:
+                return code, {"rcept_no": None}, None
+            tables, currencies = notes_raw_tables(fetch_document_text(key, rcept_no))
+            return code, {"rcept_no": rcept_no, "cur": currencies, "tables": tables}, None
+        except Exception as e:
+            return code, None, str(e)
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        for fut in as_completed([pool.submit(work, c) for c in targets]):
+            code, result, err = fut.result()
+            if result is not None:
+                store[code] = result
+                done += 1
+            else:
+                errors += 1
+                log(f"[raw] {code} 오류: {err}")
+            if done and done % 200 == 0:
+                el = time.time() - started
+                log(f"[raw] 진행 {done}/{len(targets)} · {el/60:.1f}분 · 남은 예상 {(len(targets)-done)*el/done/60:.0f}분")
+    NOTES_RAW_PATH.parent.mkdir(exist_ok=True)
+    with gzip.open(NOTES_RAW_PATH, "wt", encoding="utf-8") as f:
+        json.dump(store, f, ensure_ascii=False, separators=(",", ":"))
+    log(f"[raw] 완료: {done}개 수집, 오류 {errors}건, {NOTES_RAW_PATH.stat().st_size/1e6:.1f}MB, 총 {(time.time()-started)/60:.1f}분")
 
 
 def notes_sample(key):
@@ -540,6 +618,8 @@ if __name__ == "__main__":
         notes_sample(key)
     elif cmd == "notes":
         notes_full(key)
+    elif cmd == "notes_raw":
+        notes_raw(key)
     else:
         print(__doc__)
         sys.exit(1)
