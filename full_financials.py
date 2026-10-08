@@ -411,13 +411,13 @@ def notes_full(key):
 
 
 NOTES_RAW_PATH = BASE_DIR / "out" / "notes_raw.json.gz"
-RAW_KEYWORD = re.compile(r"상각")
+RAW_KEYWORD = re.compile(r"상각|이자비용")  # 감가상각비 표 + 이자비용(금융원가 주석) 표
 RAW_SKIP = re.compile(r"대손상각|상각후원가")
 CURRENCY_UNIT = re.compile(r"단위\s*[:：]?\s*(?:천|백만|억)?\s*(원|USD|US\$|달러|위안|RMB|CNY|엔|JPY|홍콩달러|HKD|싱가포르달러|SGD|유로|EUR)", re.I)
 
 
 def notes_raw_tables(text):
-    """주석 구간에서 '상각'이 들어간 표를 통째로(행 단위 셀 텍스트) 모은다. 선택 규칙은 로컬에서 정답과 대조하며 정한다.
+    """주석 구간에서 '상각'·'이자비용'이 들어간 표를 통째로(행 단위 셀 텍스트) 모은다. 선택 규칙은 로컬에서 정답과 대조하며 정한다.
     표마다 구간 제목·표 직전 문구·단위를 같이 남기고, 문서 전체의 통화 단위 표기 빈도도 센다."""
     tables, section, last_unit, currencies = [], "", None, {}
     for m in re.finditer(r"<TITLE[^>]*>(.*?)</TITLE>|<TABLE[^>]*>(.*?)</TABLE>|<P[^>]*>(.*?)</P>", text, re.S | re.I):

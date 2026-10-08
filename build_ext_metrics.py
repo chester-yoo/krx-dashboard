@@ -6,8 +6,9 @@ EV/EBITDA·순차입금·영업현금흐름·이자보상배율 계산용 확장
 출력: data/fin_ext.json { 종목코드: {y, fs, cash, debt, nd, op, da, da_src, ocf, icr, icr_basis} }  (금액 단위 억원)
 
 산식(최근 사업연도, 연결 우선)
-  현금      = 현금및현금성자산 + 단기금융상품(단기금융자산)
-  차입부채  = 차입금(단기·장기·유동성장기부채) + 사채(CB·BW·EB 포함) + 리스부채(유동·비유동) + 유동화채무
+  현금      = 현금및현금성자산 + 유동 금융자산(단기금융상품·당기손익-공정가치·상각후원가·기타유동금융자산 등, 채권·대여금 제외)
+  차입부채  = 차입금(단기·장기·유동성장기부채) + 사채(CB·BW·EB 포함) + 리스부채(유동·비유동) + 유동화채무 + 상환전환우선주부채
+  (FnGuide 이자발생부채·순부채와 대사해 맞춘 기준. 주석으로만 구분되는 기타금융자산·기타금융부채 구성은 반영하지 못함)
   순차입금  = 차입부채 − 현금
   EBITDA    = 영업이익 + 감가상각비(유형·사용권·투자부동산) + 무형자산상각비
               감가상각비 출처 우선순위: 재무제표 본문(현금흐름표 조정·손익) → 원문 주석(현금흐름 주석 → 성격별 분류) → XBRL 주석 합계
@@ -36,11 +37,14 @@ INDUSTRY_PATH = BASE_DIR / "data" / "industry.json"
 OUT_PATH = BASE_DIR / "data" / "fin_ext.json"
 
 FINANCIAL_INDUSTRY = re.compile(r"은행|보험|증권|창업투자|기타금융|카드|캐피탈|금융")
-CASH_NAME = re.compile(r"^현금및현금성자산$|^현금 및 현금성자산$")
+CASH_NAME = re.compile(r"^현금및현금성자산")
 STFIN_NAME = re.compile(r"단기금융상품|단기금융자산")
-DEBT_NAME = re.compile(r"차입금|사채|리스부채|차입부채|리스(비)?유동부채|장기부채|장기채무|차입채무|유동화채무")
+# 유동자산 중 현금성 금융자산(FnGuide 순부채의 현금 쪽 기준에 맞춤). 매출채권·미수금·대여금·보증금 등 영업·채권성 자산은 제외
+LIQUID_NAME = re.compile(r"금융상품|금융자산|투자자산|예치금|공정가치|상각후원가|단기매매|매도가능|만기보유|예금")
+LIQUID_EXCLUDE = re.compile(r"매출채권|미수|대여금|보증금|계약자산|파생|리스채권|선급|재고")
+DEBT_NAME = re.compile(r"차입금|사채|리스부채|차입부채|리스(비)?유동부채|장기부채|장기채무|차입채무|유동화채무|우선주부채")
 DEBT_ID = re.compile(r"Borrowings|BondsIssued|LeaseLiabilities|LoansReceived")  # 이름이 '단기금융부채' 등으로만 된 차입 계정 보완
-DEBT_EXCLUDE = re.compile(r"할인|할증|조정|발행비|상환|이자|미지급|충당")
+DEBT_EXCLUDE = re.compile(r"할인|할증|조정|발행비|상환|이자|미지급|충당|파생|총계")
 DA_NAME = re.compile(r"감가상각|(무형|유형|사용권|생물|투자부동산)\S*상각")
 DA_EXCLUDE = re.compile(r"대손|상각후원가|할인|할증|차금|손상|누계")
 OP_NAME = re.compile(r"^영업이익|^영업손실|^영업이익\(손실\)")
@@ -80,6 +84,52 @@ def sum_distinct(rows, pred):
         total += r[3]
         hit = True
     return total if hit else None
+
+
+def is_cash(r):
+    return r[1] == "ifrs-full_CashAndCashEquivalents" or bool(CASH_NAME.search(r[2].replace(" ", "")))
+
+
+def current_asset_rows(bs):
+    """재무상태표 행 순서에서 '유동자산' 다음부터 '비유동자산' 전까지를 유동자산 항목으로 본다."""
+    out, inside = [], False
+    for r in bs:
+        nm = r[2].replace(" ", "")
+        if nm == "유동자산" or r[1] == "ifrs-full_CurrentAssets":
+            inside = True
+            continue
+        if nm in ("비유동자산", "자산총계") or r[1] in ("ifrs-full_NoncurrentAssets", "ifrs-full_Assets"):
+            if inside:
+                break
+            continue
+        if inside:
+            out.append(r)
+    return out
+
+
+def cash_like(bs):
+    """현금 = 현금및현금성자산 + 유동 금융자산(단기금융상품·당기손익-공정가치·상각후원가·기타유동금융자산 등).
+    유동자산 구간을 못 찾으면 단기금융상품만 더한다."""
+    cash = first(bs, is_cash)
+    cur = current_asset_rows(bs)
+    liquid = sum_distinct(cur, lambda r: not is_cash(r) and LIQUID_NAME.search(r[2]) and not LIQUID_EXCLUDE.search(r[2])) if cur \
+        else sum_distinct(bs, lambda r: STFIN_NAME.search(r[2]))
+    if cash is None and liquid is None:
+        return None
+    return (cash or 0) + (liquid or 0)
+
+
+def borrowings(bs):
+    """차입부채 = 차입금·사채·리스부채·유동화채무·상환전환우선주부채. 같은 이름이 액면·순액 두 줄로 나오면(차이 2% 이내) 한 줄만 쓴다."""
+    picked = [r for r in bs if r[3] is not None and (DEBT_NAME.search(r[2]) or DEBT_ID.search(r[1] or "")) and not DEBT_EXCLUDE.search(r[2])]
+    total = sum_distinct(picked, lambda r: True) or 0
+    by_name = {}
+    for r in picked:
+        by_name.setdefault(r[2].replace(" ", ""), []).append(r[3])
+    for vals in by_name.values():
+        if len(vals) == 2 and vals[0] != vals[1] and abs(vals[0] - vals[1]) <= abs(max(vals, key=abs)) * 0.02:
+            total -= max(vals)
+    return total
 
 
 def body_da(rows, sources=("CF",)):
@@ -165,9 +215,8 @@ def build():
         rows, year = v["rows"], v["y"]
         bs = [r for r in rows if r[0] == "BS"]
         pl = [r for r in rows if r[0] in ("IS", "CIS")]
-        cash = first(bs, lambda r: r[1] == "ifrs-full_CashAndCashEquivalents" or CASH_NAME.search(r[2]))
-        stfin = sum_distinct(bs, lambda r: STFIN_NAME.search(r[2]))
-        debt = sum_distinct(bs, lambda r: (DEBT_NAME.search(r[2]) or DEBT_ID.search(r[1] or "")) and not DEBT_EXCLUDE.search(r[2]) and "파생" not in r[2])
+        cash_total = cash_like(bs)
+        debt = borrowings(bs)
         op = first(pl, lambda r: OP_NAME.search(r[2]))
         ocf = first(rows, lambda r: r[0] == "CF" and r[1] == OCF_ID)
         ie = first(pl, lambda r: IE_NAME.search(r[2]))
@@ -177,8 +226,7 @@ def build():
         if da is None:
             da, da_src, da_chk, da_alt = pick_supplement(notes_da(notes.get(code), assets),
                                                          xbrl_da(xbrl.get(code, {}).get("facts", []), year), assets)
-        cash_total = (cash or 0) + (stfin or 0) if (cash is not None or stfin is not None) else None
-        nd = (debt or 0) - cash_total if cash_total is not None else None
+        nd = debt - cash_total if cash_total is not None else None
         denom, basis = (ie, "이자비용") if ie else (fc, "금융비용")
         icr = round(op / denom, 2) if op is not None and denom else None
         out[code] = {"y": year, "fs": v.get("fs"), "cash": eok(cash_total), "debt": eok(debt or 0), "nd": eok(nd),
