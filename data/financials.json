@@ -17942,7 +17942,9 @@
 "revenue":1150691499139,
 "operating_profit":78114435118,
 "net_income":114381099710,
-"fs_div":"CFS"
+"fs_div":"CFS",
+"net_income_ctrl":120761089839,
+"equity_ctrl":177894684839
 },
 "2024":{
 "assets":970970804269,
@@ -17952,7 +17954,9 @@
 "revenue":1008111365589,
 "operating_profit":31084577897,
 "net_income":-5176664480,
-"fs_div":"CFS"
+"fs_div":"CFS",
+"net_income_ctrl":3070992522,
+"equity_ctrl":71388376257
 },
 "2023":{
 "assets":1027078032335,
@@ -17962,7 +17966,9 @@
 "revenue":1018577151624,
 "operating_profit":22359940820,
 "net_income":-24754798288,
-"fs_div":"CFS"
+"fs_div":"CFS",
+"net_income_ctrl":-10548702331,
+"equity_ctrl":65030983985
 }
 },
 "016920":{
