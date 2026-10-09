@@ -750,7 +750,7 @@ function renderToolbar(total){
   const hasFin = v.cols.filter(k=>FIN_ALL.includes(k)).length > 1;
   document.getElementById('tblActions').innerHTML =
     (hasFin ? `<span class="seg" role="group" aria-label="재무 컬럼"><button data-fin="core" class="${st.finMode==='core'?'on':''}">재무 핵심</button><button data-fin="all" class="${st.finMode==='all'?'on':''}">재무 전체</button></span>` : '') +
-    `<button class="secondary" id="resetBtn">필터 초기화</button><button id="reloadBtn">데이터 새로고침</button>` +
+    `<button class="secondary" id="resetBtn">필터 초기화</button><button class="secondary" id="xlsxBtn" title="현재 필터·정렬 결과 전체를 전체 컬럼으로 내려받기">엑셀 다운로드</button><button id="reloadBtn">데이터 새로고침</button>` +
     `<button class="ghost ${st.showNote?'on':''}" id="noteToggle" aria-expanded="${st.showNote}">ⓘ 기준 설명</button>`;
   document.querySelectorAll('#tblActions [data-fin]').forEach(b=>b.addEventListener('click', ()=>{
     st.finMode=b.dataset.fin; openPop=null;
@@ -762,6 +762,113 @@ function renderToolbar(total){
   document.getElementById('noteToggle').addEventListener('click', ()=>{ st.showNote=!st.showNote; renderNote(); renderToolbar(total); });
   document.getElementById('resetBtn').addEventListener('click', ()=>{ st.f = {...v.defaults}; st.h = {}; st.page=0; renderFilterPanel(); onFilterChange(true); });
   document.getElementById('reloadBtn').addEventListener('click', loadData);
+  document.getElementById('xlsxBtn').addEventListener('click', e=>exportXlsx(e.currentTarget));
+}
+
+/* ---------- 엑셀 내려받기 ---------- */
+const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+let xlsxLoading = null;
+function loadXlsx(){
+  // 처음 누를 때만 라이브러리를 받는다(초기 화면 속도 유지)
+  if(window.XLSX) return Promise.resolve();
+  return xlsxLoading = xlsxLoading || new Promise((ok, fail)=>{
+    const sc = document.createElement('script'); sc.src = XLSX_URL; sc.onload = ok;
+    sc.onerror = ()=>{ xlsxLoading = null; fail(new Error('엑셀 라이브러리를 불러오지 못했습니다')); };
+    document.head.appendChild(sc);
+  });
+}
+const PCT_KEYS = new Set(['opm','nim','debt','growth','gapCur','gapNew','gapCurAvg','chg20']);
+const X_KEYS = new Set(['per','pbr','evEbitda','icr']);
+function plainText(html){ const d = document.createElement('div'); d.innerHTML = html; return d.textContent.trim(); }
+function exportCols(view){
+  // 재무 컬럼이 있는 탭은 '재무 전체' 모드 기준 전체 컬럼을 내보낸다.
+  // 화면의 재무 전체 모드는 폭 때문에 상태 컬럼(정지 사유·연속 미달·공시 단계)을 숨기지만, 파일에는 모두 넣는다
+  const st = viewState[view], v = VIEWS[view], mode = st.finMode, hide = v.hideStatusInFull;
+  st.finMode = 'all'; v.hideStatusInFull = false;
+  try { return colsFor(view); } finally { st.finMode = mode; v.hideStatusInFull = hide; }
+}
+const EOK_KEYS = new Set(['cap','avg','rev','op','ni','assets','liab','eq','nd','ocf']);
+function exportUnit(c){
+  if(PCT_KEYS.has(c.key)) return ' (%)';
+  if(X_KEYS.has(c.key)) return ' (배)';
+  if(EOK_KEYS.has(c.key)) return ' (억원)';
+  if(c.key==='streak') return ' (거래일)';
+  return '';
+}
+function exportHeader(c){
+  if(c.grp && c.grp.startsWith('fy_')) return `${GROUPS[c.grp]}${/^fy_(opm|debt)$/.test(c.grp) ? ' (%)' : ''} ${c.label}`;
+  return c.label + exportUnit(c);
+}
+function exportValue(c, s){
+  if(c.num){
+    const v = c.get(s);
+    if(v!=null && v!=='' && isFinite(v)){
+      const pct = PCT_KEYS.has(c.key) || /^y_(opm|debt)_/.test(c.key);
+      return {v:Number(v), t:'n', z: X_KEYS.has(c.key) ? '0.00' : (pct ? '0.0' : '#,##0')};
+    }
+  }
+  if(c.key==='code') return {v:String(s.c), t:'s'};  // 종목코드 앞자리 0 유지
+  if(c.key==='reason' || c.key==='stage'){ const x = s[c.key]; return {v: x ? `${x.label} (${formatDate(x.date)})` : '', t:'s'}; }
+  const txt = plainText(c.cell(s));
+  return {v: txt==='-' ? '' : txt, t:'s'};  // N/M·배지 등은 화면 글자 그대로
+}
+function exportRemark(s){
+  const e = s.ext, out = [];
+  if(e && e.icr!=null && e.icr_basis==='금융비용') out.push('이자보상배율: 금융비용 기준 근사치(*)');
+  if(e && e.da_chk==='불일치') out.push(`EV/EBITDA: 감가상각비 주석·XBRL 10% 넘게 차이(†), 다른 출처 값 ${e.da_alt}억`);
+  if(e && e.da_src) out.push(`감가상각비 출처: ${e.da_src}`);
+  if(e && e.cur) out.push(`외화 공시(${e.cur}) 원화 환산`);
+  return out.join(' / ');
+}
+async function exportXlsx(btn){
+  const v = VIEWS[currentView], st = viewState[currentView];
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = '만드는 중...';
+  try {
+    await loadXlsx();
+    const cols = exportCols(currentView);
+    const list = sortList(applyFilters(currentView), colsFor(currentView), st);
+    const ws = XLSX.utils.aoa_to_sheet([[...cols.map(exportHeader), '비고']]);
+    list.forEach((s, i)=>{
+      cols.forEach((c, j)=>{ const x = exportValue(c, s); if(x.v!=='') ws[XLSX.utils.encode_cell({r:i+1, c:j})] = x; });
+      const rm = exportRemark(s);
+      if(rm) ws[XLSX.utils.encode_cell({r:i+1, c:cols.length})] = {v:rm, t:'s'};
+    });
+    const range = XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:Math.max(list.length,1), c:cols.length}});
+    ws['!ref'] = range;
+    ws['!autofilter'] = {ref: range};
+    ws['!cols'] = [...cols.map(c=>({wch: Math.max(9, Math.min(26, exportHeader(c).length + 4))})), {wch:70}];
+    const info = [
+      ['항목', '내용'],
+      ['화면', v.title],
+      ['데이터 기준일', asofDate || '-'],
+      ['내려받은 시각', new Date().toLocaleString('ko-KR')],
+      ['종목 수', list.length],
+      ['적용 필터', chipList().map(c=>c.text).join(' · ') || '없음'],
+      ['정렬', `${(colsFor(currentView).find(c=>c.key===st.sortKey)||{label:st.sortKey}).label} ${st.sortDir>0?'오름차순':'내림차순'}`],
+      ['출처', '시세·시가총액: 한국거래소(KRX) / 재무: OpenDART 재무제표·사업보고서 원문 주석(자동 추출) / 업종: 네이버 금융 / 환율: 유럽중앙은행(ECB) 기준환율'],
+      ['화면 기준 설명', v.note],
+      ['재무 지표 기준', EXT_TIP],
+      ['비고 기호', '* 이자보상배율을 이자비용 대신 금융비용으로 계산한 근사치 / † 감가상각비 주석값이 XBRL과 10% 넘게 달라 검증이 필요한 값'],
+      ['유의사항', '대시보드 자체 계산값이며 KRX·DART 원문과 다를 수 있습니다. 투자 판단 전 원문 공시를 확인하세요. EV/EBITDA·PER·PBR은 데이터 기준일 시가총액으로 계산되어 날짜마다 달라집니다.'],
+      [],
+      ['컬럼', '설명'],
+      ...cols.filter(c=>c.tip).map(c=>[exportHeader(c), c.tip]),
+    ];
+    const ws2 = XLSX.utils.aoa_to_sheet(info);
+    ws2['!cols'] = [{wch:24}, {wch:120}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '데이터');
+    XLSX.utils.book_append_sheet(wb, ws2, '설명');
+    XLSX.writeFile(wb, `${v.nav}_${(asofDate||'').replace(/-/g,'')}.xlsx`);
+    btn.textContent = label;
+  } catch(err){
+    console.error(err);
+    btn.textContent = '다운로드 실패';
+    setTimeout(()=>{ btn.textContent = label; }, 2500);
+  } finally {
+    btn.disabled = false;
+  }
 }
 function renderNote(){
   const v = VIEWS[currentView], st = viewState[currentView], el = document.getElementById('notePanel');
@@ -798,19 +905,21 @@ function headFilterCell(c, st, baseList){
   const lbl = on ? `${mn||''}~${mx||''}` : '범위';
   return `<th class="${cls}"><button class="rng-btn ${on?'on':''}" data-rng="${c.key}" aria-label="${esc(c.label)} 범위 필터">${esc(lbl)}</button>${openPop===c.key?`<div class="pop" role="dialog" aria-label="${esc(c.label)} 범위"><label>최소<input type="number" data-h="${c.key}_min" value="${esc(mn||'')}"></label><label>최대<input type="number" data-h="${c.key}_max" value="${esc(mx||'')}"></label><button class="secondary" data-popclose>닫기</button></div>`:''}</th>`;
 }
-function renderResults(rebuildHead=true){
-  const v = VIEWS[currentView], st = viewState[currentView];
-  const cols = colsFor(currentView);
-  cols.forEach((c,i)=>{ c.gs = i>0 && cols[i-1].grp!==c.grp; });
+function sortList(list, cols, st){
   const sc = cols.find(c=>c.key===st.sortKey) || cols[0];
-  const list = applyFilters(currentView);
-  list.sort((a,b)=>{
+  return list.sort((a,b)=>{
     const av=sc.get(a), bv=sc.get(b);
     const an = av==null || av==='', bn = bv==null || bv==='';
     if(an && bn) return 0; if(an) return 1; if(bn) return -1;
     const r = typeof av==='string' ? av.localeCompare(bv,'ko') : av-bv;
     return r*st.sortDir;
   });
+}
+function renderResults(rebuildHead=true){
+  const v = VIEWS[currentView], st = viewState[currentView];
+  const cols = colsFor(currentView);
+  cols.forEach((c,i)=>{ c.gs = i>0 && cols[i-1].grp!==c.grp; });
+  const list = sortList(applyFilters(currentView), cols, st);
   const pages = Math.max(1, Math.ceil(list.length/PAGE_SIZE));
   if(st.page>=pages) st.page = pages-1;
   if(rebuildHead){
