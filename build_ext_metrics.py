@@ -69,12 +69,13 @@ def first(rows, pred):
 
 
 def sum_distinct(rows, pred):
-    """같은 계정이 중복 표기된 경우를 막으려고 (계정ID, 계정명) 기준으로 한 번씩만 더한다."""
+    """같은 행이 중복 표기된 경우만 한 번씩 더한다(계정ID·계정명·금액이 모두 같을 때).
+    '-표준계정코드 미사용-' ID로 유동·비유동에 같은 이름(예: 차입금)이 금액만 달리 나오는 경우는 둘 다 더한다."""
     seen, total, hit = set(), 0, False
     for r in rows:
         if not pred(r) or r[3] is None:
             continue
-        key = (r[1], r[2])
+        key = (r[1], r[2], r[3])
         if key in seen:
             continue
         seen.add(key)
@@ -118,14 +119,20 @@ def cash_like(bs):
 
 def borrowings(bs):
     """차입부채 = 차입금·사채·리스부채·유동화채무·상환전환우선주부채. 같은 이름이 액면·순액 두 줄로 나오면(차이 2% 이내) 한 줄만 쓴다."""
-    picked = [r for r in bs if r[3] is not None and (DEBT_NAME.search(r[2]) or DEBT_ID.search(r[1] or "")) and not DEBT_EXCLUDE.search(r[2])]
-    total = sum_distinct(picked, lambda r: True) or 0
-    by_name = {}
+    picked = [r for r in bs if r[3] is not None and (DEBT_NAME.search(r[2]) or DEBT_ID.search(r[1] or ""))
+              and (not DEBT_EXCLUDE.search(r[2]) or "우선주부채" in r[2])]  # '상환'이 제외어지만 상환전환우선주부채는 차입부채
+    seen, rows = set(), []
     for r in picked:
+        if (r[1], r[2], r[3]) not in seen:
+            seen.add((r[1], r[2], r[3]))
+            rows.append(r)
+    total = sum(r[3] for r in rows)
+    by_name = {}
+    for r in rows:
         by_name.setdefault(r[2].replace(" ", ""), []).append(r[3])
     for vals in by_name.values():
-        if len(vals) == 2 and vals[0] != vals[1] and abs(vals[0] - vals[1]) <= abs(max(vals, key=abs)) * 0.02:
-            total -= max(vals)
+        if len(vals) == 2 and abs(vals[0] - vals[1]) <= abs(max(vals, key=abs)) * 0.02:
+            total -= max(vals)  # 액면·순액(할인차금 차감 전후)으로 두 줄 나온 사채 등: 순액만 남긴다
     return total
 
 
@@ -167,18 +174,11 @@ def xbrl_da(facts, year):
 
 
 def notes_pick(entry, assets):
-    """원문 주석 값(notes_extract.py 결과, 보고 통화 원 단위): 현금흐름 주석·성격별 분류 중 큰 값 → 변동표 합.
-    (현금흐름 주석이 일부 행만 담거나 성격별 표가 판관비 몫만 담은 경우가 있어 둘 중 큰 값이 FnGuide와 더 잘 맞았다)
-    자산총계 대비 0.02%~50% 밖이면 단위를 잘못 읽은 것으로 보고 버린다."""
-    if not entry:
+    """원문 주석 감가상각비(선택 규칙은 notes_extract.choose_da). 자산총계 대비 0.02%~50% 밖이면 단위를 잘못 읽은 것으로 보고 버린다."""
+    val = (entry or {}).get("da")
+    if not val:
         return None, None
-    cands = [(v, "원문 주석") for v in (entry.get("cf"), entry.get("nature")) if v]
-    if cands:
-        val, src = max(cands)
-    elif entry.get("roll"):
-        val, src = entry["roll"], "원문 주석(변동표)"
-    else:
-        return None, None
+    src = "원문 주석(변동표)" if entry.get("da_src") == "roll" else "원문 주석"
     if assets and not 0.0002 <= val / assets <= 0.5:
         return None, None
     return val, src
@@ -216,7 +216,7 @@ def build():
                 da, da_src = xv, "XBRL 주석"
         ie = first(pl, lambda r: IE_NAME.search(r[2])) or note.get("ie") or first(cf_rows, lambda r: re.match(r"이자비용", r[2].replace(" ", "")))
         fc = first(pl, lambda r: FC_NAME.search(r[2]))
-        denom, basis = (abs(ie), "이자비용") if ie else (fc, "금융비용")
+        denom, basis = (abs(ie), "이자비용") if ie else (abs(fc) if fc else None, "금융비용")
         icr = round(op / denom, 2) if op is not None and denom else None
         nd = debt - cash_total if cash_total is not None else None
         # 외화 공시 종목 원화 환산(재무상태표 항목은 연말, 손익·현금흐름은 연평균 환율). 비율인 이자보상배율은 그대로

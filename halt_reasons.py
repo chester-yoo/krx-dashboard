@@ -154,8 +154,10 @@ def fetch_exchange_reports(key, corp_code, bgn_de, end_de):
             timeout=20,
         )
         data = resp.json()
-        if data.get("status") != "000":
+        if data.get("status") == "013":  # 조회된 데이터 없음
             break
+        if data.get("status") != "000":  # 호출 한도 초과·점검 등: 빈 결과로 덮어쓰지 않도록 예외로 알린다
+            raise RuntimeError(f"DART status={data.get('status')} {data.get('message')}")
         rows.extend(data.get("list", []))
         if page >= int(data.get("total_page", 1)):
             break
@@ -201,7 +203,10 @@ def update(codes, key):
                 reason = find_reason(fetch_exchange_reports(key, corp_code, bgn_de, today))
             except Exception as e:
                 print(f"[halt_reasons] {code} 오류: {financials.redact(e)}")
-                reason = (entry or {}).get("reason")
+                if entry:
+                    result[code] = entry  # 기존 값 유지, 다음 실행에서 다시 조회
+                    found += 1 if entry.get("reason") else 0
+                    continue
             time.sleep(0.15)
         result[code] = {"reason": reason, "checked_at": today, "v": CACHE_VERSION}
         found += 1 if reason else 0

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "sample (표본 10개사) / full (전체) / xbrl_sample (XBRL 주석 감가상각 표본) / xbrl (XBRL 감가상각 전체) / notes_sample (원문 주석 감가상각 표본) / notes (원문 주석 감가상각 전체) / notes_raw (상각 관련 주석 표 원본 전체 → 아티팩트) / full_refresh (전체 재무제표 전 종목 재수집)"
+        description: "sample (표본 10개사) / full (전체) / xbrl_sample (XBRL 주석 감가상각 표본) / xbrl (XBRL 감가상각 전체) / notes_sample (원문 주석 감가상각 표본) / notes (원문 주석 감가상각 전체) / notes_raw (상각 관련 주석 표 원본 전체 → 아티팩트) / full_refresh (전체 재무제표 전 종목 재수집) / notes_fin (기타금융자산·부채 주석 표 → 아티팩트). notes_raw_retry·currency는 out/notes_raw.json.gz가 필요해 로컬 실행 전용"
         required: true
         default: sample
 
@@ -32,11 +32,11 @@ jobs:
         run: python full_financials.py ${{ inputs.mode }}
 
       - name: Upload raw notes tables
-        if: always() && inputs.mode == 'notes_raw'
+        if: always() && (inputs.mode == 'notes_raw' || inputs.mode == 'notes_fin')
         uses: actions/upload-artifact@v4
         with:
-          name: notes_raw
-          path: out/notes_raw.json.gz
+          name: ${{ inputs.mode }}
+          path: out/${{ inputs.mode }}.json.gz
           retention-days: 30
 
       - name: Commit and push if changed

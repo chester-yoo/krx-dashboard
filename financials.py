@@ -290,16 +290,21 @@ def collect_batch(key, corp_codes, year, stats):
 
 def check_multi_supported(key, pending, corp_map, corp_to_stock, year):
     """다중 조회가 되는지 소량(최대 10개)으로 먼저 확인한다. 응답 형식도 같이 확인한다."""
-    sample = pending[:10]
     started = time.time()
-    try:
-        rows = fetch_multi_rows(key, [corp_map[c] for c in sample], year)
-    except Exception as e:
-        log(f"[financials] 사전 점검 실패: 다중 조회 호출 오류 ({time.time() - started:.1f}초): {e}")
-        return False
+    rows, sample = [], []
+    # 대기 종목이 아직 사업보고서가 없는 신규 상장사뿐이면 응답이 비는 게 정상이라, 표본을 바꿔 가며 최대 5번 확인한다
+    for i in range(0, min(len(pending), 50), 10):
+        sample = pending[i:i + 10]
+        try:
+            rows = fetch_multi_rows(key, [corp_map[c] for c in sample], year)
+        except Exception as e:
+            log(f"[financials] 사전 점검 실패: 다중 조회 호출 오류 ({time.time() - started:.1f}초): {e}")
+            return False
+        if rows:
+            break
     if not rows:
-        log(f"[financials] 사전 점검 실패: 표본 {len(sample)}개에서 응답 행이 없습니다. ({time.time() - started:.1f}초)")
-        return False
+        log(f"[financials] 사전 점검: 표본 종목에 아직 {year} 보고서가 없습니다(신규 상장 등). 다중 조회로 진행합니다.")
+        return True
     need = {"account_nm", "fs_div", "thstrm_amount", "frmtrm_amount", "bfefrmtrm_amount"}
     missing = need - set(rows[0].keys())
     if missing:

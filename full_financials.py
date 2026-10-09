@@ -41,7 +41,7 @@ SAVE_EVERY = 100
 # 저장할 계정: 계정명 키워드 또는 표준 계정ID 키워드 중 하나라도 맞으면 보관
 KEEP_NAME = re.compile(r"현금및현금성자산|단기금융상품|차입금|사채|리스부채|부채총계|자본총계|영업이익|영업손실|이자비용|금융비용|금융원가"
                        r"|감가상각|상각비|영업활동|유형자산의 ?취득|무형자산의 ?취득|이자의 ?지급|당기순이익|당기순손실"
-                       r"|매출|영업수익|수익\(매출|지배|소유주|비지배")
+                       r"|매출|영업수익|수익\(매출|지배|소유주|비지배|상각")  # '무형자산상각'처럼 '비' 없는 비표준 행도 보관
 KEEP_ID = re.compile(r"CashAndCashEquivalents$|ShortTermDeposits|Borrowings|LoansReceived|Bonds|LeaseLiabilities|FinanceCosts|InterestExpense"
                      r"|Depreciation|Amortisation|OperatingActivities|PurchaseOfPropertyPlant|PurchaseOfIntangible|InterestPaid"
                      r"|Revenue|ProfitLossAttributableTo")
@@ -212,6 +212,7 @@ def xbrl_full(key):
     started = time.time()
     lock = threading.Lock()
     done = found = errors = 0
+    last_saved = 0
     stop = threading.Event()
 
     def work(code):
@@ -238,7 +239,8 @@ def xbrl_full(key):
                     errors += 1
                     if errors <= 20:
                         log(f"[xbrl] {code} 오류: {err}")
-                if done and done % SAVE_EVERY == 0:
+                if done and done % SAVE_EVERY == 0 and done != last_saved:
+                    last_saved = done
                     save()
                     el = time.time() - started
                     log(f"[xbrl] 진행 {done}/{len(targets)} · 감가상각 확보 {found} · {el/60:.1f}분 · 남은 예상 {(len(targets)-done)*el/done/60:.0f}분")
@@ -387,6 +389,7 @@ def notes_full(key):
     started = time.time()
     lock = threading.Lock()
     done = found = errors = 0
+    last_saved = 0
     stop = threading.Event()
 
     def work(code):
@@ -418,7 +421,8 @@ def notes_full(key):
                     errors += 1
                     if errors <= 20:
                         log(f"[notes] {code} 오류: {err}")
-                if done and done % SAVE_EVERY == 0:
+                if done and done % SAVE_EVERY == 0 and done != last_saved:
+                    last_saved = done
                     save()
                     el = time.time() - started
                     log(f"[notes] 진행 {done}/{len(targets)} · 추출 {found} · {el/60:.1f}분 · 남은 예상 {(len(targets)-done)*el/done/60:.0f}분")
@@ -535,6 +539,7 @@ def notes_raw(key, path=NOTES_RAW_PATH, keyword=RAW_KEYWORD):
     targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c) and not fin.search(industry.get(c, "")) and c not in store]
     log(f"[raw] 대상 {len(targets)}개 종목 (이미 받은 {len(store)}개 제외), 동시 {WORKERS}건")
     started, done, errors = time.time(), 0, 0
+    last_saved = 0
     lock, stop = threading.Lock(), threading.Event()
 
     def work(code):
@@ -569,7 +574,8 @@ def notes_raw(key, path=NOTES_RAW_PATH, keyword=RAW_KEYWORD):
                     if "점검" in err and not stop.is_set():
                         stop.set()
                         log("[raw] DART 원문 서비스 점검 중이라 저장 후 멈춥니다. 점검이 끝난 뒤 다시 실행하면 이어서 받습니다.")
-                if done and done % 200 == 0:
+                if done and done % 200 == 0 and done != last_saved:
+                    last_saved = done
                     save()
                     el = time.time() - started
                     log(f"[raw] 진행 {done}/{len(targets)} · 오류 {errors} · {el/60:.1f}분 · 남은 예상 {(len(targets)-done)*el/done/60:.0f}분")
@@ -627,7 +633,8 @@ def currency(key):
     targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c)
                and (c.startswith("9") or foreign_share(c) is None or foreign_share(c) >= 0.25)]
     log(f"[currency] 대상 {len(targets)}개 종목")
-    found = {}
+    # 이번에 확인하지 못한(오류) 종목은 기존 판정을 유지한다. 원화로 확인된 종목만 목록에서 뺀다
+    found = json.load(open(CURRENCY_PATH, encoding="utf-8")) if CURRENCY_PATH.exists() else {}
     for code in targets:
         acc = accounts[code]
         try:
@@ -635,6 +642,8 @@ def currency(key):
             cur = next((r.get("currency") for r in rows if r.get("currency")), None)
             if cur and cur.upper() != "KRW":
                 found[code] = cur.upper()
+            elif cur:
+                found.pop(code, None)
         except Exception as e:
             log(f"[currency] {code} 오류: {e}")
         time.sleep(0.15)
@@ -725,6 +734,7 @@ def full(key, refresh=False):
     started = time.time()
     lock = threading.Lock()
     done = errors = 0
+    last_saved = 0
     stop = threading.Event()
 
     def work(code):
@@ -751,7 +761,8 @@ def full(key, refresh=False):
                     errors += 1
                     if errors <= 20:
                         log(f"[full] {code} 오류: {err}")
-                if done and done % SAVE_EVERY == 0:
+                if done and done % SAVE_EVERY == 0 and done != last_saved:
+                    last_saved = done
                     save()
                     el = time.time() - started
                     log(f"[full] 진행 {done}/{len(targets)} · {el/60:.1f}분 · 종목당 {el/done:.2f}초 · 남은 예상 {(len(targets)-done)*el/done/60:.0f}분")

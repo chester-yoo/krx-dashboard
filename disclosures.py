@@ -44,8 +44,10 @@ def fetch_recent_major_reports(key, corp_code, bgn_de, end_de):
         timeout=20,
     )
     data = resp.json()
-    if data.get("status") != "000":
+    if data.get("status") == "013":  # 조회된 데이터 없음
         return []
+    if data.get("status") != "000":  # 호출 한도 초과·점검 등: 빈 목록으로 덮어쓰지 않도록 예외로 알린다
+        raise RuntimeError(f"DART status={data.get('status')} {data.get('message')}")
     return [
         {"date": row.get("rcept_dt"), "report_nm": row.get("report_nm"), "rcept_no": row.get("rcept_no")}
         for row in data.get("list", [])[:5]
@@ -84,7 +86,7 @@ def update(codes, key, refresh_days=1):
             reports = fetch_recent_major_reports(key, corp_code, bgn_de, end_de)
         except Exception as e:
             print(f"[disclosures] {code} 오류: {financials.redact(e)}")
-            reports = (entry or {}).get("reports", [])
+            continue  # 기존 캐시 유지(없으면 비워 둠), 다음 실행에서 다시 조회
         cache[code] = {"reports": reports, "checked_at": today}
         checked += 1
         fetched += 1

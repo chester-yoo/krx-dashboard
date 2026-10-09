@@ -31,32 +31,39 @@ jobs:
         run: python fx.py || echo "[fx] 환율 갱신 실패 - 기존 fx_rates.json 사용"
 
       - name: Update financial statements (OpenDART)
+        continue-on-error: true  # 한 단계가 실패해도 그날 수집한 시세(history)는 아래에서 커밋되도록
         env:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
         run: python financials.py update --years 3
 
       - name: Update major disclosures (OpenDART)
+        continue-on-error: true  # 한 단계가 실패해도 그날 수집한 시세(history)는 아래에서 커밋되도록
         env:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
         run: python disclosures.py update
 
       - name: Build dashboard summary
+        continue-on-error: true  # 한 단계가 실패해도 그날 수집한 시세(history)는 아래에서 커밋되도록
         run: python build_summary.py
 
       - name: Build extended financial metrics
+        continue-on-error: true  # 한 단계가 실패해도 그날 수집한 시세(history)는 아래에서 커밋되도록
         run: python build_ext_metrics.py
 
       - name: Update halt reasons (OpenDART exchange disclosures)
+        continue-on-error: true  # 한 단계가 실패해도 그날 수집한 시세(history)는 아래에서 커밋되도록
         env:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
         run: python halt_reasons.py update
 
       - name: Update designation stage (OpenDART exchange disclosures)
+        continue-on-error: true  # 한 단계가 실패해도 그날 수집한 시세(history)는 아래에서 커밋되도록
         env:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
         run: python designation_stage.py update
 
       - name: Commit and push if changed
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

@@ -473,7 +473,7 @@ function extCols(basis){
   return {
     evEbitda:{label:'EV/EBITDA', grp:'fin', num:true, tip:'EV ÷ EBITDA. EV = 시가총액 + 순차입금, EBITDA = 영업이익 + 감가상각비(무형자산상각 포함). 감가상각비를 확인하지 못한 종목은 공란, EBITDA 적자는 음수 그대로 표시. ' + EXT_TIP,
       get:s=>evEbitdaOf(s,basis), cell:s=>{ const v=evEbitdaOf(s,basis); if(v==null) return '-'; const e=s.ext, off=e.da_chk==='불일치';
-        const t=`감가상각비 출처: ${e.da_src||''} (${e.da}억)` + (e.da_chk==='일치'?' · 주석·XBRL 대조 일치':'') + (off?` · 다른 출처 값 ${e.da_alt}억과 10% 넘게 차이, 검증 필요`:'');
+        const t=`감가상각비 출처: ${e.da_src||''} (${e.da}억)` + (off?` · 다른 출처 값 ${e.da_alt}억과 10% 넘게 차이, 검증 필요`:'');
         return `<span title="${esc(t)}">${v.toFixed(1)}배${off?'†':''}</span>`; },
       cls:s=>{ const v=evEbitdaOf(s,basis); return v==null ? 'mute' : (v<0 ? 'neg' : ''); }},
     nd:{label:'순차입금', grp:'fin', num:true, tip:'차입금 + 사채(CB·BW·EB 포함) + 리스부채 + 상환전환우선주부채 − (현금및현금성자산 + 유동 금융자산), 억원. 음수는 순현금. 금융 자회사가 있는 그룹은 연결 차입금에 금융업 부채가 포함됨. ' + EXT_TIP,
@@ -494,22 +494,10 @@ const FIN_PER_FIRST = FIN_ALL.filter(k=>k!=='per').flatMap(k=>k==='pbr' ? ['per'
 const EXT_KEYS = ['evEbitda','nd','ocf','icr'];
 
 /* ---------- 필터 정의 ---------- */
-const PROFIT_OPTS = [['','무관'],['last','최근연도 흑자'],['all3','3개년 연속 흑자'],['loss','최근연도 적자']];
 const BASE_FILTERS = [
   {id:'q', label:'종목명/코드 검색', type:'text', ph:'예: 삼성전자, 005930'},
   {id:'market', label:'시장', type:'select', opts:[['','전체'],['KOSPI','KOSPI'],['KOSDAQ','KOSDAQ']]},
   {id:'industry', label:'업종', type:'select', opts:'industry'},
-];
-const FIN_FILTERS = [
-  {id:'opMode', label:'영업이익', type:'select', opts:PROFIT_OPTS},
-  {id:'opmMin', label:'영업이익률 ≥ (%)', type:'number'},
-  {id:'niMode', label:'당기순이익', type:'select', opts:PROFIT_OPTS},
-  {id:'growthMin', label:'매출성장률 ≥ (%)', type:'number'},
-  {id:'debtMax', label:'부채비율 ≤ (%)', type:'number'},
-  {id:'pbrMax', label:'PBR ≤ (배)', type:'number'},
-  {id:'perMax', label:'PER ≤ (배)', type:'number'},
-  {id:'impair', label:'자본잠식 종목', type:'select', opts:[['','포함'],['full','완전잠식 제외'],['any','부분·완전잠식 제외']]},
-  {id:'incNoData', label:'재무 데이터 없는 종목 포함', type:'check'},
 ];
 const CAP_BANDS = [['100억 미만',null,100],['100~300억',100,300],['300~1,000억',300,1000],['1,000억 이상',1000,null]];
 const GAP_BANDS = {a:['−50% 이하',null,-50], b:['−50 ~ −20%',-50,-20], c:['−20 ~ 0%',-20,0], d:['0% 이상(근접)',0,null]};
@@ -585,7 +573,7 @@ const VIEWS = {
 };
 const VIEW_KEYS = Object.keys(VIEWS);
 const viewState = {};
-VIEW_KEYS.forEach(k=>{ viewState[k] = {f:{...VIEWS[k].defaults}, h:{}, sortKey:VIEWS[k].sort[0], sortDir:VIEWS[k].sort[1], page:0, finMode:'core', showFin:false, showNote:false}; });
+VIEW_KEYS.forEach(k=>{ viewState[k] = {f:{...VIEWS[k].defaults}, h:{}, sortKey:VIEWS[k].sort[0], sortDir:VIEWS[k].sort[1], page:0, finMode:'core', showNote:false}; });
 
 function colsFor(view){
   const v = VIEWS[view], st = viewState[view];
@@ -603,30 +591,6 @@ function colsFor(view){
 
 /* ---------- 필터 적용 ---------- */
 function num(v){ return v==='' || v==null ? null : Number(v); }
-function profitOk(mode, years, field){
-  const val = y => y.d[field];
-  if(!years.length || val(years[0])==null) return null;
-  if(mode==='last') return val(years[0])>0;
-  if(mode==='loss') return val(years[0])<=0;
-  if(mode==='all3'){ const y3=years.slice(0,3); return y3.length>=3 && y3.every(y=>val(y)!=null && val(y)>0); }
-  return true;
-}
-function finPass(s, f, basis){
-  const inc = !!f.incNoData, fin = s.fin;
-  if(f.opMode){ const r = fin ? profitOk(f.opMode, fin.years, 'operating_profit') : null; if(r===null ? !inc : !r) return false; }
-  if(f.niMode){ const r = fin ? profitOk(f.niMode, fin.years, 'net_income') : null; if(r===null ? !inc : !r) return false; }
-  const opm=num(f.opmMin); if(opm!=null){ if(!fin||fin.opm==null){ if(!inc) return false; } else if(fin.opm<opm) return false; }
-  const gr=num(f.growthMin); if(gr!=null){ if(!fin||fin.growth==null){ if(!inc) return false; } else if(fin.growth<gr) return false; }
-  const dm=num(f.debtMax); if(dm!=null){ if(!fin||fin.eq==null||fin.liab==null){ if(!inc) return false; } else if(fin.debt==null||fin.debt>dm) return false; }
-  const pm=num(f.pbrMax); if(pm!=null){ if(!fin||fin.eqC==null||basis(s)==null){ if(!inc) return false; } else { const p=pbrOf(s,basis); if(p==null||p>pm) return false; } }
-  const em=num(f.perMax); if(em!=null){ if(!fin||fin.niC==null||basis(s)==null){ if(!inc) return false; } else { const p=perOf(s,basis); if(p==null||p>em) return false; } }
-  if(f.impair){
-    if(!fin||fin.impair==null){ if(!inc) return false; }
-    else if(fin.impair==='full') return false;
-    else if(f.impair==='any' && fin.impair==='part') return false;
-  }
-  return true;
-}
 function headerPass(s, cols, h){
   for(const c of cols){
     if(!c.ft) continue;
@@ -647,8 +611,8 @@ function applyFilters(view){
   const v = VIEWS[view], st = viewState[view], f = st.f;
   const q = (f.q||'').trim().toLowerCase();
   const capMin=num(f.capMin), capMax=num(f.capMax), streakMin=num(f.streakMin);
-  const allCols = Object.assign({}, C, makeFinCols(v.basis), extCols(v.basis));
-  const hcols = v.headerFilters ? [...v.cols.map(k=>Object.assign({key:k}, allCols[k], allCols[k].ft===undefined && allCols[k].num ? {ft:'range'} : {})), ...yearCols()] : null;
+  // 헤더 필터는 지금 화면에 보이는 컬럼(재무 핵심/전체 모드 반영)에만 적용한다
+  const hcols = v.headerFilters ? colsFor(view) : null;
   return stocks.filter(v.base).filter(s=>{
     if(hcols && !headerPass(s,hcols,st.h)) return false;
     if(q && !s.n.toLowerCase().includes(q) && !s.c.toLowerCase().includes(q)) return false;
@@ -660,7 +624,6 @@ function applyFilters(view){
     if(f.status && s.status!==f.status) return false;
     if(f.stageF){ const x = s.stage ? s.stage.label : ''; if(f.stageF==='__any__' ? x==='' : (f.stageF==='__blank__' ? x!=='' : x!==f.stageF)) return false; }
     if(f.gapBand && !gapInBand(s.gapNew, f.gapBand)) return false;
-    if(v.finFilters && !finPass(s,f,v.basis)) return false;
     return true;
   });
 }
@@ -692,16 +655,13 @@ function filterControl(d, st, industries){
   }
   return `<div class="field"><label for="f_${d.id}">${esc(d.label)}</label><input id="f_${d.id}" type="${d.type}" data-f="${d.id}" value="${esc(val||'')}" placeholder="${esc(d.ph||'')}"></div>`;
 }
-function finActiveCount(st){ return FIN_FILTERS.filter(d=>{ const x=st.f[d.id]; return x!=null && x!=='' && x!==false; }).length; }
 function renderFilterPanel(){
   const v = VIEWS[currentView], st = viewState[currentView], panel = document.getElementById('filterPanel');
   if(v.noPanel){ panel.style.display='none'; panel.innerHTML=''; return; }
   panel.style.display='block';
   const industries = [...new Set(stocks.map(s=>s.i).filter(Boolean))].sort();
   let html = `<div class="controls-row">${v.filters.map(d=>filterControl(d,st,industries)).join('')}`;
-  if(v.finFilters){ const n = finActiveCount(st); html += `<button class="ghost ${st.showFin?'on':''}" id="finToggle" aria-expanded="${st.showFin}">재무 필터 ${st.showFin?'▴':'▾'}${n?` (${n})`:''}</button>`; }
   html += `</div>`;
-  if(v.finFilters && st.showFin) html += `<div class="fin-group"><div class="glabel">재무 필터 (최근 사업연도 기준, 임계값은 직접 입력)</div><div class="controls-row">${FIN_FILTERS.map(d=>filterControl(d,st,industries)).join('')}</div></div>`;
   panel.innerHTML = html;
   panel.querySelectorAll('[data-f]').forEach(el=>{
     const evt = el.tagName==='SELECT' || el.type==='checkbox' ? 'change' : 'input';
@@ -713,8 +673,6 @@ function renderFilterPanel(){
       onFilterChange();
     });
   });
-  const ft = document.getElementById('finToggle');
-  if(ft) ft.addEventListener('click', ()=>{ st.showFin=!st.showFin; renderFilterPanel(); });
 }
 function syncFilterInputs(){
   const st = viewState[currentView];
@@ -755,7 +713,7 @@ function renderHaltTop(list, st, area){
 }
 function chipList(){
   const v = VIEWS[currentView], st = viewState[currentView], chips = [];
-  const defs = [...v.filters, ...(v.finFilters ? FIN_FILTERS : [])];
+  const defs = v.filters;
   defs.forEach(d=>{
     const x = st.f[d.id];
     if(x==null || x==='' || x===false) return;
@@ -794,7 +752,13 @@ function renderToolbar(total){
     (hasFin ? `<span class="seg" role="group" aria-label="재무 컬럼"><button data-fin="core" class="${st.finMode==='core'?'on':''}">재무 핵심</button><button data-fin="all" class="${st.finMode==='all'?'on':''}">재무 전체</button></span>` : '') +
     `<button class="secondary" id="resetBtn">필터 초기화</button><button id="reloadBtn">데이터 새로고침</button>` +
     `<button class="ghost ${st.showNote?'on':''}" id="noteToggle" aria-expanded="${st.showNote}">ⓘ 기준 설명</button>`;
-  document.querySelectorAll('#tblActions [data-fin]').forEach(b=>b.addEventListener('click', ()=>{ st.finMode=b.dataset.fin; renderResults(true); }));
+  document.querySelectorAll('#tblActions [data-fin]').forEach(b=>b.addEventListener('click', ()=>{
+    st.finMode=b.dataset.fin; openPop=null;
+    // 모드 전환으로 사라진 컬럼의 필터는 지워서, 보이지 않는 조건으로 결과가 줄어든 채 남지 않게 한다
+    const visible = new Set(colsFor(currentView).map(c=>c.key));
+    Object.keys(st.h).forEach(k=>{ if(!visible.has(k.replace(/_(min|max)$/,''))) delete st.h[k]; });
+    st.page=0; renderChips(); renderResults(true);
+  }));
   document.getElementById('noteToggle').addEventListener('click', ()=>{ st.showNote=!st.showNote; renderNote(); renderToolbar(total); });
   document.getElementById('resetBtn').addEventListener('click', ()=>{ st.f = {...v.defaults}; st.h = {}; st.page=0; renderFilterPanel(); onFilterChange(true); });
   document.getElementById('reloadBtn').addEventListener('click', loadData);

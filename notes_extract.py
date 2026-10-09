@@ -9,7 +9,7 @@
   cf      현금흐름 주석(영업활동 조정)의 감가상각·상각 행 합계
   nature  비용의 성격별 분류 주석의 감가상각·상각 행 합계 (매출원가·판관비·합계 열이 있으면 합계 열)
   roll    유형자산·무형자산·사용권자산·투자부동산 변동표의 감가상각(상각)비 열 '합계' 행을 더한 값
-  FnGuide 감가상각비(현금흐름표 기준)와 대조해 우선순위를 정했다(evaluate 참고).
+  FnGuide 감가상각비(현금흐름표 기준)와 대조해 선택 규칙을 정했다(choose_da 참고).
 이자비용: 금융비용(금융원가) 주석의 '이자비용' 행 → 없으면 현금흐름 주석의 '이자비용' 행
 
 사용법
@@ -226,10 +226,13 @@ def currency_of(entry):
 
 
 def choose_da(c):
-    """FnGuide 대조 결과로 정한 우선순위: 현금흐름 주석 → 성격별 분류 → 변동표 합."""
-    for key in ("cf", "nature", "roll"):
-        if c.get(key):
-            return c[key], key
+    """FnGuide 대조로 정한 규칙: 현금흐름 주석·성격별 분류 중 큰 값 → 없으면 자산 변동표 합.
+    (현금흐름 주석이 일부 행만 담거나 성격별 표가 판관비 몫만 담은 경우가 있어 둘 중 큰 값이 더 잘 맞았다)"""
+    cands = [(c[k], k) for k in ("cf", "nature") if c.get(k)]
+    if cands:
+        return max(cands)
+    if c.get("roll"):
+        return c["roll"], "roll"
     return None, None
 
 

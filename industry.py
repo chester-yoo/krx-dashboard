@@ -55,10 +55,11 @@ def update_missing(codes, cache=None, save=True):
     for i, code in enumerate(missing):
         try:
             name = fetch_industry(code)
-            cache[code] = name or ""
+            if name is not None:
+                cache[code] = name
+            # None(응답 실패·업종 표기 없음)은 캐시하지 않아 다음 실행에서 다시 조회한다
         except Exception as e:
             print(f"[industry]  {code} 오류: {e}")
-            cache[code] = ""
         if (i + 1) % 50 == 0:
             if save:
                 save_cache(cache)
