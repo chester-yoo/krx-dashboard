@@ -614,6 +614,99 @@ def notes_raw_retry(key):
     log(f"[raw-retry] 완료: {len(targets)}개 중 {fixed}개 보완")
 
 
+XBRL_ND_PATH = BASE_DIR / "out" / "xbrl_nd.json.gz"
+ND_WORKERS = 2  # 2026-10-12 동시 3건에서 SSL 연결 끊김이 잦아 낮춤
+ND_FACT = re.compile(r"<([\w\-]+):(\w*(?:Cash|Deposit|FinancialAsset|FinancialInstrument|Investment|Borrowing|Bond|Debenture|Lease|Loan|Debt|"
+                     r"LiabilitiesArisingFromFinancingActivities|FinancialLiabilit)\w*)\s([^>]*?)>([^<]*)</", re.S)
+
+
+def xbrl_nd_one(key, rcept_no, year):
+    """순부채용: 사업보고서 XBRL에서 기말 시점(instant)의 현금·금융자산·차입·리스·재무활동부채 사실을 차원(member)과 함께 모은다."""
+    import io
+    import zipfile
+    for attempt in range(3):  # DART가 가끔 SSL 연결을 끊는다(SSLEOFError) → 잠시 쉬고 재시도
+        try:
+            resp = requests.get(API_BASE + "/fnlttXbrl.xml", params={"crtfc_key": key, "rcept_no": rcept_no, "reprt_code": "11011"}, timeout=180)
+            break
+        except requests.exceptions.ConnectionError:
+            if attempt == 2:
+                raise
+            time.sleep(10 * (attempt + 1))
+    z = zipfile.ZipFile(io.BytesIO(resp.content))
+    text = "".join(z.read(n).decode("utf-8", "ignore") for n in z.namelist() if n.lower().endswith(".xbrl"))
+    # 'CurrentLeaseLiabilitiesMemberOf...TableOfMember' → 'CurrentLeaseLiabilities' (저장 용량 축소)
+    short = lambda mem: re.sub(r"Member(Of.*)?$", "", mem.split(":")[-1])
+    contexts = {cid: (dict(PERIOD.findall(body)), [short(m[1]) for m in MEMBER.findall(body)]) for cid, body in CONTEXT.findall(text)}
+    facts, seen = [], set()
+    for prefix, name, attrs, value in ND_FACT.findall(text):
+        m = re.search(r'contextRef="([^"]+)"', attrs)
+        period, members = contexts.get(m.group(1) if m else "", ({}, []))
+        end = period.get("instant") or ""
+        num = to_number(value.strip())
+        if num is None or not end.startswith(year) or len(members) > 2:
+            continue
+        k = (prefix, name, tuple(members))
+        if k not in seen:
+            seen.add(k)
+            facts.append([f"{prefix}:{name}", num, members])
+    return {"rcept_no": rcept_no, "size": len(text), "facts": facts}
+
+
+def xbrl_nd(key):
+    """비금융 전 종목: 순부채 대사용 XBRL 사실 수집 (out/xbrl_nd.json.gz, 로컬 실행). 이미 받은 종목은 건너뛴다.
+    접수번호는 notes_fin 수집 때 쓴 사업보고서를 그대로 쓴다(같은 보고서의 주석·XBRL)."""
+    import gzip
+    corp_map = financials.get_corp_code_map(key)
+    accounts = json.load(open(ACCOUNTS_PATH, encoding="utf-8"))
+    industry = json.load(open(BASE_DIR / "data" / "industry.json", encoding="utf-8"))
+    known = json.load(gzip.open(NOTES_FIN_PATH, "rt", encoding="utf-8")) if NOTES_FIN_PATH.exists() else {}
+    store = json.load(gzip.open(XBRL_ND_PATH, "rt", encoding="utf-8")) if XBRL_ND_PATH.exists() else {}
+    fin = re.compile(r"은행|보험|증권|창업투자|기타금융|카드|캐피탈|금융")
+    targets = [c for c, v in accounts.items() if v.get("y") and corp_map.get(c) and not fin.search(industry.get(c, "")) and c not in store]
+    log(f"[xbrl-nd] 대상 {len(targets)}개 종목 (이미 받은 {len(store)}개 제외), 동시 {ND_WORKERS}건")
+    started, done, errors, last_saved = time.time(), 0, 0, 0
+    lock, stop = threading.Lock(), threading.Event()
+
+    def work(code):
+        if stop.is_set():
+            return code, None, "skipped"
+        try:
+            year = str(accounts[code]["y"])
+            rcept_no = (known.get(code) or {}).get("rcept_no") or find_annual_report(key, corp_map[code], year)
+            if not rcept_no:
+                return code, {"rcept_no": None, "facts": []}, None
+            return code, xbrl_nd_one(key, rcept_no, year), None
+        except Exception as e:
+            return code, None, str(e)
+
+    def save():
+        XBRL_ND_PATH.parent.mkdir(exist_ok=True)
+        with gzip.open(XBRL_ND_PATH, "wt", encoding="utf-8") as f:
+            json.dump(store, f, ensure_ascii=False, separators=(",", ":"))
+
+    with ThreadPoolExecutor(max_workers=ND_WORKERS) as pool:
+        for fut in as_completed([pool.submit(work, c) for c in targets]):
+            code, result, err = fut.result()
+            with lock:
+                if result is not None:
+                    store[code] = result
+                    done += 1
+                elif err != "skipped":
+                    errors += 1
+                    if errors <= 30:
+                        log(f"[xbrl-nd] {code} 오류: {err}")
+                if done and done % 50 == 0 and done != last_saved:
+                    last_saved = done
+                    save()
+                    el = time.time() - started
+                    log(f"[xbrl-nd] 진행 {done}/{len(targets)} · 오류 {errors} · {el/60:.1f}분 · 남은 예상 {(len(targets)-done)*el/done/60:.0f}분")
+                if not stop.is_set() and time.time() - started > TIME_BUDGET_SEC:
+                    stop.set()
+                    log("[xbrl-nd] 시간 제한에 도달해 저장 후 종료합니다.")
+    save()
+    log(f"[xbrl-nd] 완료: 이번 실행 {done}개, 오류 {errors}건, 누적 {len(store)}개, 총 {(time.time()-started)/60:.1f}분")
+
+
 CURRENCY_PATH = BASE_DIR / "data" / "currency.json"
 
 
@@ -798,6 +891,8 @@ if __name__ == "__main__":
         notes_raw(key)
     elif cmd == "notes_fin":
         notes_raw(key, NOTES_FIN_PATH, FIN_KEYWORD)
+    elif cmd == "xbrl_nd":
+        xbrl_nd(key)
     elif cmd == "notes_raw_retry":
         notes_raw_retry(key)
     elif cmd == "currency":

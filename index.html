@@ -476,7 +476,7 @@ function extCols(basis){
         const t=`감가상각비 출처: ${e.da_src||''} (${e.da}억)` + (off?` · 다른 출처 값 ${e.da_alt}억과 10% 넘게 차이, 검증 필요`:'');
         return `<span title="${esc(t)}">${v.toFixed(1)}배${off?'†':''}</span>`; },
       cls:s=>{ const v=evEbitdaOf(s,basis); return v==null ? 'mute' : (v<0 ? 'neg' : ''); }},
-    nd:{label:'순차입금', grp:'fin', num:true, tip:'차입금 + 사채(CB·BW·EB 포함) + 리스부채 + 상환전환우선주부채 − (현금및현금성자산 + 유동 금융자산), 억원. 음수는 순현금. 기타금융자산·기타금융부채는 주석 내역으로 보정(대여금·미수금·보증금 등은 현금에서 제외, 차입금·리스부채 등은 차입에 포함). 금융 자회사가 있는 그룹은 연결 차입금에 금융업 부채가 포함됨. ' + EXT_TIP,
+    nd:{label:'순차입금', grp:'fin', num:true, tip:'차입금 + 사채(CB·BW·EB 포함) + 리스부채 + 상환전환우선주부채 − (현금및현금성자산 + 유동 금융자산), 억원. 음수는 순현금. 기타금융자산·기타금융부채는 주석 내역으로 보정(대여금·미수금·보증금 등은 현금에서 제외, 차입금·리스부채 등은 차입에 포함). 기타채무 등에 섞여 빠진 차입은 XBRL 「재무활동에서 생기는 부채」 기말 합계로 보완. 금융 자회사가 있는 그룹은 연결 차입금에 금융업 부채가 포함됨. ' + EXT_TIP,
       get:s=>s.ext?s.ext.nd:null, cell:s=>s.ext&&s.ext.nd!=null ? fmtEok(s.ext.nd) : '-', cls:s=>s.ext&&s.ext.nd!=null ? '' : 'mute'},
     ocf:{label:'영업CF', grp:'fin', num:true, tip:'영업활동현금흐름, 억원. ' + EXT_TIP,
       get:s=>s.ext?s.ext.ocf:null, cell:s=>s.ext&&s.ext.ocf!=null ? fmtEok(s.ext.ocf) : '-', cls:s=>s.ext&&s.ext.ocf!=null ? (s.ext.ocf<0?'neg':'') : 'mute'},

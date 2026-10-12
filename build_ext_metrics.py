@@ -11,6 +11,8 @@ EV/EBITDA·순차입금·영업현금흐름·이자보상배율 계산용 확장
   순차입금  = 차입부채 − 현금
               기타금융자산·기타금융부채는 주석 내역으로 보정(notes_fin.json): 비현금성(대여금·미수금·보증금 등)은 현금에서 빼고,
               차입성(차입금·사채·리스부채 등)은 차입부채에 더한다. 주석 합계와 맞는 표를 찾은 종목만 보정
+              XBRL '재무활동에서 생기는 부채' 기말 합계(배당·보증금·파생 제외)가 더 크면 그 값을 차입부채로 쓰고,
+              XBRL에 단기예금 태그가 있으면 기타유동금융자산 중 그 예금만 현금으로 남긴다
   EBITDA    = 영업이익 + 감가상각비(유형·사용권·투자부동산·생물자산 감가상각 + 무형자산상각)
               감가상각비 출처: 현금흐름표 본문 → 원문 주석(현금흐름 주석·성격별 분류 중 큰 값 → 자산 변동표 합) → XBRL 주석
               주석 값이 XBRL과 10% 넘게 다르면 da_chk="불일치"로 표시
@@ -41,7 +43,7 @@ CASH_NAME = re.compile(r"^현금및현금성자산")
 STFIN_NAME = re.compile(r"단기금융상품|단기금융자산")
 # 유동자산 중 현금성 금융자산(FnGuide 순부채의 현금 쪽 기준에 맞춤). 매출채권·미수금·대여금·보증금 등 영업·채권성 자산은 제외
 LIQUID_NAME = re.compile(r"금융상품|금융자산|투자자산|예치금|공정가치|상각후원가|단기매매|매도가능|만기보유|예금")
-LIQUID_EXCLUDE = re.compile(r"매출채권|미수|대여금|보증금|계약자산|파생|리스채권|선급|재고")
+LIQUID_EXCLUDE = re.compile(r"비금융|매출채권|미수|대여금|보증금|계약자산|파생|리스채권|선급|재고")
 DEBT_NAME = re.compile(r"차입금|사채|리스부채|차입부채|리스(비)?유동부채|장기부채|장기채무|차입채무|유동화채무|우선주부채")
 DEBT_ID = re.compile(r"Borrowings|BondsIssued|LeaseLiabilities|LoansReceived")  # 이름이 '단기금융부채' 등으로만 된 차입 계정 보완
 DEBT_EXCLUDE = re.compile(r"할인|할증|조정|발행비|상환|이자|미지급|충당|파생|총계")
@@ -207,6 +209,7 @@ def build():
         adj = notes_fin.get(code)
         if adj and adj.get("y") == year:  # 같은 사업연도 보고서의 주석으로 만든 보정만 적용
             debt += adj["debt_add"]
+            debt = max(debt, adj.get("debt_min", 0))  # XBRL 재무활동부채보다 작으면 기타채무 등에 섞인 차입금이 빠진 것
             if cash_total is not None:
                 cash_total -= adj["cash_excl"]
         op = first(pl, lambda r: OP_NAME.search(r[2]))
