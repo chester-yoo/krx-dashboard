@@ -2,13 +2,15 @@
 EV/EBITDA·순차입금·영업현금흐름·이자보상배율 계산용 확장 재무 지표 생성 (API 호출 없음)
 =====================================================================================
 입력: data/full_accounts.json(전체 재무제표), data/notes_extract.json(원문 주석 감가상각비·이자비용, notes_extract.py),
-      data/xbrl_depr.json(XBRL 주석 감가상각 합계), data/industry.json(금융업 제외), data/currency.json·fx_rates.json(외화 환산, fx.py)
+      data/xbrl_depr.json(XBRL 주석 감가상각 합계), data/notes_fin.json(기타금융자산·부채 주석 보정, notes_fin_extract.py), data/industry.json(금융업 제외), data/currency.json·fx_rates.json(외화 환산, fx.py)
 출력: data/fin_ext.json { 종목코드: {y, fs, cash, debt, nd, op, da, da_src, da_chk, da_alt, ocf, icr, icr_basis, cur} }  (금액 단위 억원, 원화)
 
 산식(최근 사업연도, 연결 우선). FnGuide(감가상각비(현금흐름표)·이자발생부채·순부채·이자비용)와 대사해 맞춘 기준
   현금      = 현금및현금성자산 + 유동 금융자산(단기금융상품·당기손익-공정가치·상각후원가·기타유동금융자산 등, 채권·대여금 제외)
   차입부채  = 차입금(단기·장기·유동성장기부채) + 사채(CB·BW·EB 포함) + 리스부채(유동·비유동) + 유동화채무 + 상환전환우선주부채
-  순차입금  = 차입부채 − 현금   (주석으로만 구분되는 기타금융자산·기타금융부채 구성은 반영하지 못함)
+  순차입금  = 차입부채 − 현금
+              기타금융자산·기타금융부채는 주석 내역으로 보정(notes_fin.json): 비현금성(대여금·미수금·보증금 등)은 현금에서 빼고,
+              차입성(차입금·사채·리스부채 등)은 차입부채에 더한다. 주석 합계와 맞는 표를 찾은 종목만 보정
   EBITDA    = 영업이익 + 감가상각비(유형·사용권·투자부동산·생물자산 감가상각 + 무형자산상각)
               감가상각비 출처: 현금흐름표 본문 → 원문 주석(현금흐름 주석·성격별 분류 중 큰 값 → 자산 변동표 합) → XBRL 주석
               주석 값이 XBRL과 10% 넘게 다르면 da_chk="불일치"로 표시
@@ -29,6 +31,7 @@ BASE_DIR = Path(__file__).resolve().parent
 ACCOUNTS_PATH = BASE_DIR / "data" / "full_accounts.json"
 XBRL_PATH = BASE_DIR / "data" / "xbrl_depr.json"
 NOTES_PATH = BASE_DIR / "data" / "notes_extract.json"  # notes_extract.py 결과(원문 주석 감가상각비·이자비용)
+NOTES_FIN_PATH = BASE_DIR / "data" / "notes_fin.json"  # notes_fin_extract.py 결과(기타금융자산·부채 주석 보정)
 FINANCIALS_PATH = BASE_DIR / "data" / "financials.json"
 INDUSTRY_PATH = BASE_DIR / "data" / "industry.json"
 OUT_PATH = BASE_DIR / "data" / "fin_ext.json"
@@ -189,6 +192,7 @@ def build():
     xbrl = load(XBRL_PATH, {})
     industry = load(INDUSTRY_PATH, {})
     notes = load(NOTES_PATH, {})
+    notes_fin = load(NOTES_FIN_PATH, {})
     out = {}
     stats = {"total": 0, "da_body": 0, "da_notes": 0, "da_xbrl": 0, "da_mismatch": 0, "nd": 0, "ocf": 0, "icr": 0, "icr_ie": 0, "fx": 0}
     for code, v in accounts.items():
@@ -200,6 +204,11 @@ def build():
         cf_rows = [r for r in rows if r[0] == "CF"]
         cash_total = cash_like(bs)
         debt = borrowings(bs)
+        adj = notes_fin.get(code)
+        if adj and adj.get("y") == year:  # 같은 사업연도 보고서의 주석으로 만든 보정만 적용
+            debt += adj["debt_add"]
+            if cash_total is not None:
+                cash_total -= adj["cash_excl"]
         op = first(pl, lambda r: OP_NAME.search(r[2]))
         ocf = first(cf_rows, lambda r: r[1] == OCF_ID)
         assets = first(bs, lambda r: r[1] == "ifrs-full_Assets" or r[2].replace(" ", "") == "자산총계")  # 보고 통화 기준
