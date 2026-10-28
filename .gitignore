@@ -5,3 +5,5 @@ data/collect.log
 Code.gs
 WebApp.gs
 out/
+cache/
+.pytest_cache/
