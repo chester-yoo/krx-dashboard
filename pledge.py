@@ -540,7 +540,7 @@ def build(today=None):
                          **{k: reports[n]["doc"]["report"][k] for k in (
                              "report_date", "reporter_name", "reporter_id", "reporter_type", "reporter_job", "holding_cnt",
                              "holding_rt", "voting_shares", "sum_trd_rt", "sum_stk_cnt")},
-                         flags=reports[n]["doc"]["flags"]) for n in sorted(nos)]
+                         flags=reports[n]["doc"]["flags"], holders=reports[n]["doc"]["holders"]) for n in sorted(nos)]
         corp_code = reports[nos[0]]["corp_code"]
         ex = extra.get(corp_code, {})
         ceo = match_ceo([c for n in nos for c in reports[n]["doc"]["contracts"] if c["included"] and c["active"]],
