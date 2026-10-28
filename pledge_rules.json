@@ -1,0 +1,38 @@
+{
+  "_comment": "주담대 스크리닝 분류 사전·매핑·가정값. 규칙은 위에서부터 차례로 검사해 처음 맞는 것을 쓴다. 계약유형은 TRD_KND + TRD_RMK 문자열에서 찾는다.",
+  "contract_types": [
+    {"type": "TERMINATION", "label": "해지·상환", "include": false, "keywords": ["해지", "상환합의", "상환 합의", "삭제"]},
+    {"type": "CALL_OPTION", "label": "매수선택권·콜옵션", "include": false, "keywords": ["매수선택권", "콜옵션"]},
+    {"type": "TAX_DEPOSIT", "label": "납세담보 공탁", "include": false, "keywords": ["공탁", "연부연납", "납세담보"]},
+    {"type": "NON_PLEDGE", "label": "지분 거래·인수", "include": false, "keywords": ["양수도", "매매계약", "인수계약", "사채취득", "퇴임"]},
+    {"type": "CB_COLLATERAL", "label": "사채 담보", "include": false, "keywords": ["전환사채", "교환사채", "CB", "EB"]},
+    {"type": "PRIVATE_LOAN", "label": "금전소비대차", "include": true, "high_risk": true, "keywords": ["금전소비대차"]},
+    {"type": "LENDING", "label": "대차", "include": false, "keywords": ["대차", "대여"]},
+    {"type": "PLEDGE_LOAN", "label": "주담대", "include": true, "keywords": ["주식담보", "담보계약", "증권담보", "담보제공", "담보대출", "질권"]}
+  ],
+  "encumbrance_types": ["PLEDGE_LOAN", "PRIVATE_LOAN", "CB_COLLATERAL", "TAX_DEPOSIT", "LENDING"],
+  "lender_types": [
+    {"type": "증권금융", "score": 0, "keywords": ["증권금융"]},
+    {"type": "저축은행", "score": 2, "keywords": ["저축은행"]},
+    {"type": "증권사", "score": 0, "keywords": ["증권", "투자증권"]},
+    {"type": "은행", "score": 0, "keywords": ["은행"]},
+    {"type": "캐피탈·여전사", "score": 2, "keywords": ["캐피탈", "카드", "파이낸셜", "리스"]},
+    {"type": "SPC·대부", "score": 3, "keywords": ["대부", "SPC", "유동화"], "patterns": ["제[0-9일이삼사오육칠팔구십]+차"]},
+    {"type": "법인·조합(사채)", "score": 3, "keywords": ["(주)", "㈜", "주식회사", "유한회사", "조합", "합자회사"]},
+    {"type": "개인(사채)", "score": 3, "patterns": ["^[가-힣]{2,4}$"]}
+  ],
+  "lender_default": {"type": "기타", "score": 2},
+  "assumptions": {
+    "aggregate_mode": "facility",
+    "stale_report_days": 365,
+    "ratio_check_tolerance_pctp": 0.1,
+    "control_sale_pctp": 5,
+    "short_rollover_days": 92
+  },
+  "stress_score": {
+    "maturity_days": [{"lte": 30, "score": 3}, {"lte": 90, "score": 2}],
+    "pledge_to_holding": [{"gt": 0.50, "score": 3}, {"gte": 0.30, "score": 2}],
+    "short_rollover": 1,
+    "additional_collateral": 1
+  }
+}

@@ -180,6 +180,31 @@
   .fin-tbl{width:100%;font-size:12.5px;}
   .fin-tbl th{position:static;background:#fff;color:var(--ink);border-bottom:2px solid var(--line-strong);padding:6px 8px;font-size:12px;}
   .fin-tbl td{padding:5px 8px;border-bottom:1px solid var(--line);}
+  /* 주담대 스크리닝 */
+  .flag{display:inline-block;font-size:10.5px;font-weight:600;padding:0 6px;margin:1px 2px 1px 0;border-radius:3px;border:1px solid #cdd2d9;background:#eef0f2;color:#3f4652;white-space:nowrap;}
+  .flag.hi{background:#fbe7e3;color:#8f2a1a;border-color:#f0bcaf;}
+  .flag.rv{background:#e8edf5;color:#1f4b8f;border-color:#b9c9e6;}
+  .pl-charts{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:14px;}
+  .pl-charts .panel{margin:0;}
+  .pl-charts h4, .pl-sec h4{margin:0 0 8px;font-size:13px;color:var(--navy);}
+  .pl-chart{position:relative;height:260px;}
+  .assump-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 14px;}
+  .assump-grid .field input, .assump-grid .field select{width:100%;}
+  .pts{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--ink-soft);white-space:nowrap;}
+  .assump-grid.pts-grid{grid-template-columns:repeat(auto-fit,minmax(250px,1fr));}
+  .pts input{width:46px;padding:4px 6px;border:1px solid var(--line-strong);border-radius:4px;font-size:12.5px;}
+  .disclaimer{font-size:12px;color:var(--ink-soft);line-height:1.7;border-top:1px solid var(--line);margin-top:16px;padding-top:10px;}
+  .kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 16px;font-size:12.5px;}
+  .kv div{display:flex;justify-content:space-between;gap:8px;border-bottom:1px dotted var(--line);padding:3px 0;}
+  .kv span{color:var(--ink-soft);}
+  .dr-body .fin-tbl td{white-space:nowrap;}
+  .tblscroll{overflow-x:auto;}
+  .memo textarea{width:100%;min-height:80px;padding:6px 8px;border:1px solid var(--line-strong);border-radius:4px;font-family:inherit;font-size:13px;}
+  .memo .controls-row .field input, .memo .controls-row .field select{width:150px;}
+  .review-list{font-size:12.5px;}
+  .review-list li{margin:3px 0;}
+  #pledgeTable{width:100%;}
+  @media (max-width:860px){ .pl-charts{grid-template-columns:1fr;} .kv{grid-template-columns:1fr;} }
   @media (min-width:1280px){ body.drawer-open .main{margin-right:var(--drawer-w);} }
   @media (max-width:860px){
     .layout{flex-direction:column;}
@@ -242,6 +267,7 @@
     </div>
 
     <div class="panel empty" id="emptyState">데이터를 불러오는 중입니다...</div>
+    <div id="pledgeView" style="display:none;"></div>
   </div>
 </div>
 
@@ -251,10 +277,13 @@
     <button class="dr-close" id="closeDetail" aria-label="상세 닫기">닫기</button>
   </div>
   <div class="dr-body">
-    <div style="position:relative;height:220px;"><canvas id="trendChart"></canvas></div>
-    <div class="legend" id="chartLegend"></div>
-    <div id="financialsPanel"></div>
-    <div id="disclosuresPanel"></div>
+    <div id="stockDetail">
+      <div style="position:relative;height:220px;"><canvas id="trendChart"></canvas></div>
+      <div class="legend" id="chartLegend"></div>
+      <div id="financialsPanel"></div>
+      <div id="disclosuresPanel"></div>
+    </div>
+    <div id="pledgeDetail" style="display:none;"></div>
   </div>
 </aside>
 
@@ -633,11 +662,14 @@ function renderNav(){
   document.getElementById('nav').innerHTML = VIEW_KEYS.map(k=>{
     const n = stocks.length ? stocks.filter(VIEWS[k].base).length.toLocaleString() : '';
     return `<a href="#${k}" class="${k===currentView?'active':''}" ${k===currentView?'aria-current="page"':''}><span>${esc(VIEWS[k].nav)}<small>${esc(VIEWS[k].sub)}</small></span>${n?`<span class="nav-count">${n}</span>`:''}</a>`;
-  }).join('');
+  }).join('') + (()=>{
+    const on = currentView==='pledge', n = pledgeData ? pledgeData.companies.length.toLocaleString() : '';
+    return `<a href="#pledge" class="${on?'active':''}" ${on?'aria-current="page"':''}><span>${esc(PLEDGE_VIEW.nav)}<small>${esc(PLEDGE_VIEW.sub)}</small></span>${n?`<span class="nav-count">${n}</span>`:''}</a>`;
+  })();
 }
 function daysUntil(iso){ const t = new Date(iso+'T00:00:00+09:00') - new Date(); return Math.ceil(t/86400000); }
 function renderHeader(){
-  const v = VIEWS[currentView];
+  const v = currentView==='pledge' ? PLEDGE_VIEW : VIEWS[currentView];
   document.getElementById('viewTitle').textContent = v.title;
   document.getElementById('viewDesc').textContent = v.desc.replace('{ASOF}', asofDate || '최신 일자');
   const dd = document.getElementById('dday');
@@ -975,6 +1007,10 @@ function resetScroll(){ document.querySelector('.tablewrap').scrollTop = 0; wind
 function renderView(){
   openPop = null;
   document.body.dataset.view = currentView;
+  const pledge = currentView==='pledge';
+  ['cardsArea','filterPanel','tablePanel'].forEach(id=>{ document.getElementById(id).style.display = pledge ? 'none' : ''; });
+  document.getElementById('pledgeView').style.display = pledge ? 'block' : 'none';
+  if(pledge){ renderNav(); renderHeader(); renderPledgeView(); window.scrollTo(0, 0); return; }
   renderNav(); renderHeader(); renderCards(); renderFilterPanel(); renderNote(); renderChips(); renderResults(true);
   resetScroll();
 }
@@ -1039,6 +1075,8 @@ function renderDisclosures(code){
 function openDetail(code){
   const s = bySymbol[code]; if(!s) return;
   selectedCode = code;
+  document.getElementById('stockDetail').style.display = 'block';
+  document.getElementById('pledgeDetail').style.display = 'none';
   const tCur = thr(s.m,'current'), tNext = thr(s.m,'next');
   const dr = document.getElementById('drawer');
   dr.classList.add('open'); dr.setAttribute('aria-hidden','false'); document.body.classList.add('drawer-open');
@@ -1064,14 +1102,533 @@ function openDetail(code){
 function closeDetail(){
   const dr = document.getElementById('drawer');
   dr.classList.remove('open'); dr.setAttribute('aria-hidden','true'); document.body.classList.remove('drawer-open');
-  selectedCode = null;
-  document.querySelectorAll('#stockBody tr.selected').forEach(tr=>tr.classList.remove('selected'));
+  selectedCode = null; pledgeSelected = null;
+  document.querySelectorAll('#stockBody tr.selected, #plBody tr.selected').forEach(tr=>tr.classList.remove('selected'));
+}
+
+/* ---------- 주담대 스크리닝 ---------- */
+// data/pledge.json(pledge.py build)을 읽어 회사별 지표를 화면에서 다시 계산한다.
+// 산식은 pledge_metrics.py와 같아야 한다(가정 패널 값이 바뀌면 즉시 재계산).
+const PLEDGE_URL = 'data/pledge.json';
+const PLEDGE_VIEW = {nav:'주담대 스크리닝', sub:'대주주 주식담보대출',
+  title:'대주주 주식담보대출(주담대) 스크리닝',
+  desc:'DART 주식등의대량보유상황보고서(일반)의 「보유주식등에 관한 계약」 기준 · 지분 일부 인수 + 주담대 대환 제안 대상 선별'};
+const PLEDGE_LS_KEY = 'krx.pledge.v1';  // 열람자 브라우저에만 저장(가정값·내부 메모). 레포·서버로 보내지 않는다
+const CEO_LABEL = {CEO:'대표이사', CEO_RELATED:'대표 특수관계인', NON_CEO_INDIVIDUAL:'개인(비대표)', CORPORATE:'법인·조합', UNMATCHED:'미확인'};
+const PT_LABEL = {INDIVIDUAL:'개인', CORPORATE:'법인', PARTNERSHIP:'조합', SPV:'SPV', UNKNOWN:'미상'};
+const CT_LABEL = {PLEDGE_LOAN:'주담대', PRIVATE_LOAN:'금전소비대차'};
+const FLAG_INFO = {
+  THIRD_PARTY_DEBT:['타인 채무 담보','hi'], HIGH_RISK_CONTRACT:['금전소비대차','hi'], PARTNERSHIP_PROVIDER:['조합 담보제공','hi'],
+  REPORTER_PARTNERSHIP:['조합 보고자','hi'], CB_COLLATERAL:['CB 담보 병행','hi'], PRIVATE_LENDER:['사채·대부','hi'],
+  DUP_SUSPECT:['중복 의심','rv'], REVIEW_ROWS:['기타 계약 검토','rv'], SUM_MISMATCH:['합계 불일치','rv'], SEC_UNMATCHED:['대출정보 미조인','rv'],
+  RATIO_MISMATCH:['비율 교차검증 차이','rv'], LEDGER_FORMAT:['누적 변동표','rv'], PARSE_FAILED:['파싱 실패','rv'], CEO_UNMATCHED:['대표 매칭 불가','rv'],
+  STALE_REPORT:['정보 노후',''], MATURITY_PASSED:['만기 경과',''], SHORT_ROLLOVER:['단기 롤오버',''], ADDITIONAL_COLLATERAL:['추가담보 이력',''],
+  KEP_VARIES:['유지비율 상이',''], PARTIAL_LOAN:['대출액 일부 미기재',''], NO_LOAN_DETAIL:['대출정보 없음',''], NO_MATURITY:['만기 미기재',''],
+  SEC_JOIN_FALLBACK:['대체 조인',''], NON_COMMON_STOCK:['보통주 외',''], TERMINATED:['해지',''],
+};
+const MEMO_STATUS = ['미검토','검토중','컨택','보류','제외'];
+const LENDER_TYPES = ['증권사','증권금융','은행','저축은행','캐피탈·여전사','SPC·대부','법인·조합(사채)','개인(사채)','기타'];
+let pledgeData = null, pledgePromise = null, pledgeLoaded = false, pledgeCharts = [], pledgeSelected = null;
+const PST = {f:{}, sortKey:'score', sortDir:-1, page:0, showAssump:false, showReview:false, showNote:false};
+
+function lsLoad(){ try { return JSON.parse(localStorage.getItem(PLEDGE_LS_KEY) || '{}') || {}; } catch(e){ return {}; } }
+function lsSave(){ try { localStorage.setItem(PLEDGE_LS_KEY, JSON.stringify(pledgeLocal)); } catch(e){} }
+const pledgeLocal = Object.assign({A:null, memos:{}, codename:false}, lsLoad());
+pledgeLocal.memos = pledgeLocal.memos || {};
+
+function pDefaults(d){
+  const a = d.assumptions, s = d.stress_score;
+  return {mode:a.aggregate_mode, stale:a.stale_report_days, sale:a.control_sale_pctp, shortDays:a.short_rollover_days,
+    d1:s.maturity_days[0].score, d2:s.maturity_days[1].score,
+    h1:s.pledge_to_holding[0].score, h2:s.pledge_to_holding[1].score, l3:3, l2:2, roll:s.short_rollover, add:s.additional_collateral};
+}
+function pA(){ return pledgeLocal.A || pDefaults(pledgeData); }
+function pnorm(s){ return String(s||'').replace(/\(舊[^)]*\)|\(구[^)]*\)/g,'').replace(/\(주\)|㈜|주식회사|\(유\)|\s/g,''); }
+function isoOf(yyyymmdd){ return yyyymmdd && yyyymmdd.length===8 ? `${yyyymmdd.slice(0,4)}-${yyyymmdd.slice(4,6)}-${yyyymmdd.slice(6)}` : yyyymmdd; }
+function dayDiff(a, b){ return Math.round((Date.parse(a) - Date.parse(b)) / 864e5); }
+function fE1(won){ return won==null ? '-' : (won/1e8).toLocaleString('ko-KR',{minimumFractionDigits:1, maximumFractionDigits:1}); }
+function fP2(r){ return r==null ? '-' : (r*100).toFixed(2)+'%'; }
+function fE1x(n){ return n==null ? '-' : n.toLocaleString('ko-KR',{minimumFractionDigits:1, maximumFractionDigits:1}); }  // 이미 억원 단위인 값
+function fN(n){ return n==null ? '-' : Math.round(n).toLocaleString(); }
+function fR(x){ return x==null ? '-' : Number(x).toFixed(2)+'%'; }
+
+/* 회사 1곳 지표 계산 (pledge_metrics.company_metrics와 같은 산식). PEF 관점이라 주가 기반 반대매매·안전마진·LTV는 계산하지 않는다 */
+function pledgeCompute(c, A, S, asofIso){
+  const groups = new Map();
+  c.rows.forEach((r,i)=>{ const k = A.mode==='row' ? 'r'+i : `${pnorm(r.p)}|${pnorm(r.ln)}|${r.mt||''}`; if(!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+  const facs = [...groups.values()].map(rows=>{
+    const r0 = rows[0], f = {rows, p:r0.p, pt:r0.pt, rel:r0.rel, ln:r0.ln, lt:r0.lt, ls:r0.ls, mt:r0.mt, ct:r0.ct, d:r0.d};
+    f.sh = rows.reduce((a,r)=>a+(r.sh||0), 0);
+    const loans = rows.filter(r=>r.l!=null);
+    f.l = loans.length ? loans.reduce((a,r)=>a+r.l, 0) : null;
+    const rated = rows.filter(r=>r.l && r.r!=null);
+    f.r = rated.length ? rated.reduce((a,r)=>a+r.l*r.r, 0) / rated.reduce((a,r)=>a+r.l, 0) : null;
+    const keps = rows.map(r=>r.k).filter(Boolean);
+    f.k = keps.length ? Math.max(...keps) : null;
+    f.flags = new Set(rows.flatMap(r=>r.f||[]));
+    if(new Set(keps).size>1) f.flags.add('KEP_VARIES');
+    if(loans.length<rows.length) f.flags.add('PARTIAL_LOAN');
+    if(new Set(rows.map(r=>r.cd).filter(Boolean)).size>1) f.flags.add('ADDITIONAL_COLLATERAL');
+    if(rows.some(r=>r.sd && r.mt && dayDiff(r.mt, r.sd) <= A.shortDays)) f.flags.add('SHORT_ROLLOVER');
+    return f;
+  }).sort((a,b)=>(a.mt||'9999').localeCompare(b.mt||'9999') || (b.l||0)-(a.l||0));
+
+  const latest = c.reports.reduce((a,r)=>!a || (r.report_date||'') > (a.report_date||'') ? r : a, null);
+  const holding = Math.max(0, ...c.reports.map(r=>r.holding_cnt||0)) || null;
+  const x = {facs};
+  x.sh = facs.reduce((a,f)=>a+f.sh, 0);
+  const loans = facs.filter(f=>f.l!=null);
+  x.loan = loans.length ? loans.reduce((a,f)=>a+f.l, 0) : null;
+  x.ratio = latest.voting_shares && x.sh ? x.sh / latest.voting_shares : null;
+  x.hold = holding && x.sh ? x.sh / holding : null;
+  const rated = facs.filter(f=>f.l && f.r!=null);
+  x.rate = rated.length ? rated.reduce((a,f)=>a+f.l*f.r, 0) / rated.reduce((a,f)=>a+f.l, 0) : null;
+  const mats = [...new Set(facs.map(f=>f.mt).filter(Boolean))].sort();
+  const future = mats.filter(m=>m>=asofIso);
+  x.mt = future[0] || mats[mats.length-1] || null;
+  x.days = x.mt ? dayDiff(x.mt, asofIso) : null;
+  x.value = x.sh && c.px ? x.sh * c.px : null;  // 담보주식 시가(지분 인수 규모 가늠용)
+  x.nonBank = facs.some(f=>f.ls>=2);           // 2금융권·사채·기타 차입(대환 수요 후보)
+  x.latest = latest;
+  x.age = latest.report_date ? dayDiff(asofIso, latest.report_date) : null;
+  x.buffer = latest.holding_rt!=null ? latest.holding_rt - A.sale : null;
+
+  const flags = new Set((c.m.flags||[]).filter(f=>!['STALE_REPORT','MATURITY_PASSED'].includes(f)));
+  if(x.age!=null && x.age > A.stale) flags.add('STALE_REPORT');
+  if(mats.length && !future.length) flags.add('MATURITY_PASSED');
+  if(c.excluded && c.excluded.CB_COLLATERAL) flags.add('CB_COLLATERAL');
+  if(facs.some(f=>f.ls>=3)) flags.add('PRIVATE_LENDER');
+  facs.forEach(f=>['SHORT_ROLLOVER','ADDITIONAL_COLLATERAL'].forEach(k=>{ if(f.flags.has(k)) flags.add(k); }));
+  x.flags = flags;
+  x.high = ['THIRD_PARTY_DEBT','HIGH_RISK_CONTRACT','PARTNERSHIP_PROVIDER','REPORTER_PARTNERSHIP','CB_COLLATERAL','PRIVATE_LENDER'].some(k=>flags.has(k));
+
+  // 스트레스 스코어(우선순위 정렬용 참고지표)
+  const sd = S.maturity_days, sh = S.pledge_to_holding;
+  const parts = {
+    maturity: x.days==null ? 0 : (x.days < 0 || x.days <= sd[0].lte) ? A.d1 : x.days <= sd[1].lte ? A.d2 : 0,
+    hold: x.hold==null ? 0 : x.hold > sh[0].gt ? A.h1 : x.hold >= sh[1].gte ? A.h2 : 0,
+    lender: Math.max(0, ...facs.map(f=>f.ls>=3 ? A.l3 : f.ls>=2 ? A.l2 : 0)),
+    roll: flags.has('SHORT_ROLLOVER') ? A.roll : 0,
+    add: flags.has('ADDITIONAL_COLLATERAL') ? A.add : 0,
+  };
+  x.parts = parts;
+  x.score = Object.values(parts).reduce((a,b)=>a+Number(b||0), 0);
+  return x;
+}
+function pledgeRecompute(){
+  const A = pA(), S = pledgeData.stress_score, asofIso = isoOf(pledgeData.asof) || new Date().toISOString().slice(0,10);
+  pledgeData.companies.forEach(c=>{ c.x = pledgeCompute(c, A, S, asofIso); });
+}
+
+function memoOf(code){ return pledgeLocal.memos[code] || null; }
+function dispName(c){
+  if(!pledgeLocal.codename) return c.name;
+  const m = memoOf(c.code);
+  return m && m.codename ? m.codename : '(코드네임 미지정)';
+}
+function flagBadges(set, only){
+  return [...set].filter(f=>FLAG_INFO[f] && (!only || only.includes(f))).map(f=>`<span class="flag ${FLAG_INFO[f][1]}" title="${esc(f)}">${esc(FLAG_INFO[f][0])}</span>`).join('');
+}
+const TABLE_FLAGS = ['THIRD_PARTY_DEBT','HIGH_RISK_CONTRACT','PARTNERSHIP_PROVIDER','REPORTER_PARTNERSHIP','CB_COLLATERAL','PRIVATE_LENDER',
+  'STALE_REPORT','MATURITY_PASSED','DUP_SUSPECT','REVIEW_ROWS','SUM_MISMATCH','SEC_UNMATCHED','RATIO_MISMATCH','LEDGER_FORMAT'];
+
+const PCOLS = [
+  {key:'name', label:'회사명', get:c=>dispName(c), cell:c=>`<b>${esc(dispName(c))}</b>`, txt:true, sticky:true},
+  {key:'code', label:'코드', get:c=>pledgeLocal.codename ? '' : c.code, cell:c=>pledgeLocal.codename ? '-' : esc(c.code), txt:true, ctr:true},
+  {key:'mkt', label:'시장', get:c=>c.market||'', cell:c=>c.market ? `<span class="mkt-pill ${c.market==='KOSPI'?'kospi':'kosdaq'}">${c.market==='KOSPI'?'코스피':'코스닥'}</span>` : '-', txt:true, ctr:true},
+  {key:'cap', label:'시가총액(억)', num:true, get:c=>c.cap, cell:c=>fmtEok(c.cap)},
+  {key:'ptype', label:'담보제공자', get:c=>[...new Set(c.rows.map(r=>PT_LABEL[r.pt]||r.pt))].join('·'), cell:c=>esc([...new Set(c.rows.map(r=>PT_LABEL[r.pt]||r.pt))].join('·')), txt:true},
+  {key:'ceo', label:'대표이사', get:c=>CEO_LABEL[c.ceo_best]||'-', cell:c=>esc(CEO_LABEL[c.ceo_best]||'-'), txt:true, tip:'담보제공자가 최신 정기보고서 임원현황의 대표이사와 성명·생년월이 모두 일치하는지(동명이인·생년월 누락은 미확인)'},
+  {key:'loan', label:'총 대출액(억)', num:true, get:c=>c.x.loan, cell:c=>fE1(c.x.loan)},
+  {key:'ratio', label:'담보지분율', num:true, get:c=>c.x.ratio, cell:c=>fP2(c.x.ratio), tip:'Σ담보주식 ÷ 의결권 있는 발행주식 총수(보고서 기재값)'},
+  {key:'hold', label:'보유 대비 담보', num:true, get:c=>c.x.hold, cell:c=>fP2(c.x.hold), tip:'Σ담보주식 ÷ 보고자+특별관계자 보유주식(최신 보고서)'},
+  {key:'rate', label:'가중금리', num:true, get:c=>c.x.rate, cell:c=>fR(c.x.rate), tip:'Σ(대출액×금리) ÷ Σ대출액, 금리 기재 계약만'},
+  {key:'days', label:'최근접 만기', num:true, get:c=>c.x.days, cell:c=>c.x.days==null ? '-' : `<span title="${esc(c.x.mt)}">${c.x.days<0 ? `경과 ${-c.x.days}일` : 'D-'+c.x.days}</span>`},
+  {key:'lenders', label:'대출기관 유형', get:c=>[...new Set(c.rows.map(r=>r.lt))].join('·'), cell:c=>esc([...new Set(c.rows.map(r=>r.lt))].join('·')), txt:true},
+  {key:'value', label:'담보주식 시가(억)', num:true, get:c=>c.x.value, cell:c=>fE1(c.x.value), tip:'Σ담보주식 × 주가 기준일 종가. 지분 인수 규모를 가늠하기 위한 참고값'},
+  {key:'score', label:'스트레스 스코어', num:true, get:c=>c.x.score, cell:c=>`<b>${c.x.score}</b>`, tip:'우선순위 정렬용 참고지표이며 투자판단 기준이 아닙니다. 항목·점수는 가정 패널에서 조정'},
+  {key:'debt', label:'부채비율', num:true, get:c=>c.fin && c.fin.debt_ratio, cell:c=>c.fin && c.fin.debt_ratio!=null ? c.fin.debt_ratio.toFixed(1)+'%' : '-'},
+  {key:'op', label:'영업이익(억)', num:true, get:c=>c.fin && c.fin.op, cell:c=>c.fin && c.fin.op!=null ? fE1x(c.fin.op) : '-', cls:c=>c.fin && c.fin.op<0 ? 'neg' : ''},
+  {key:'rdate', label:'최근 보고일', get:c=>c.x.latest.report_date||'', cell:c=>`<a href="${dartUrl(c.x.latest.rcept_no)}" target="_blank" rel="noopener" style="color:var(--blue);">${esc(c.x.latest.report_date||'-')}</a>`, txt:true, ctr:true},
+  {key:'flags', label:'플래그', get:c=>c.x.flags.size, cell:c=>flagBadges(c.x.flags, TABLE_FLAGS)},
+];
+
+const PF = [
+  {g:'기본', id:'q', label:'회사명·코드 검색', type:'text'},
+  {g:'기본', id:'market', label:'시장', type:'select', opts:[['','전체'],['KOSPI','코스피'],['KOSDAQ','코스닥']]},
+  {g:'기본', id:'ind', label:'업종', type:'select', opts:'industry'},
+  {g:'기본', id:'capMin', label:'시가총액 최소(억)', type:'number'},
+  {g:'기본', id:'capMax', label:'시가총액 최대(억)', type:'number'},
+  {g:'기본', id:'tvMin', label:'거래대금 최소(억, 20일 평균)', type:'number'},
+  {g:'담보', id:'ratioMin', label:'담보지분율 최소(%)', type:'number'},
+  {g:'담보', id:'holdMin', label:'보유 대비 담보 최소(%)', type:'number'},
+  {g:'담보', id:'loanMin', label:'총 대출액 최소(억)', type:'number'},
+  {g:'담보', id:'loanMax', label:'총 대출액 최대(억)', type:'number'},
+  {g:'담보', id:'rateMin', label:'가중금리 최소(%)', type:'number'},
+  {g:'스트레스', id:'daysMax', label:'만기 잔여 최대(일)', type:'number'},
+  {g:'스트레스', id:'lender', label:'대출기관 유형', type:'select', opts:[['','전체'], ...LENDER_TYPES.map(x=>[x,x])]},
+  {g:'스트레스', id:'nonBank', label:'2금융권·사채 차입 포함', type:'check'},
+  {g:'스트레스', id:'scoreMin', label:'스트레스 스코어 최소', type:'number'},
+  {g:'스트레스', id:'ageMax', label:'보고 경과일 최대(일)', type:'number'},
+  {g:'담보제공자', id:'ptype', label:'담보제공자 유형', type:'select', opts:[['','전체'],['INDIVIDUAL','개인'],['CORPORATE','법인'],['PARTNERSHIP','조합'],['SPV','SPV']]},
+  {g:'담보제공자', id:'ceo', label:'대표이사 매칭', type:'select', opts:[['','전체'],['__ceo__','대표이사 또는 특수관계인'],['CEO','대표이사 본인'],['CEO_RELATED','대표 특수관계인'],['NON_CEO_INDIVIDUAL','개인(비대표)'],['CORPORATE','법인·조합'],['UNMATCHED','미확인']]},
+  {g:'담보제공자', id:'excludeHigh', label:'고위험 제외(조합·사채·금전소비대차·타인채무·CB담보)', type:'check'},
+  {g:'재무', id:'opPos', label:'영업이익 3년 연속 흑자', type:'check'},
+  {g:'재무', id:'debtMax', label:'부채비율 최대(%)', type:'number'},
+  {g:'재무', id:'ndMax', label:'순차입금/EBITDA 최대(배)', type:'number'},
+  {g:'재무', id:'auditOk', label:'감사의견 적정', type:'check'},
+  {g:'재무', id:'noStage', label:'관리종목·상장폐지 우려 제외', type:'check'},
+];
+
+function pledgeFilter(){
+  const f = PST.f, n = k => f[k]==null || f[k]==='' ? null : Number(f[k]);
+  const q = (f.q||'').trim().toLowerCase();
+  return pledgeData.companies.filter(c=>{
+    const x = c.x, fin = c.fin || {};
+    if(q && !c.name.toLowerCase().includes(q) && !c.code.includes(q) && !((memoOf(c.code)||{}).codename||'').toLowerCase().includes(q)) return false;
+    if(f.market && c.market!==f.market) return false;
+    if(f.ind && c.ind!==f.ind) return false;
+    if(n('capMin')!=null && !(c.cap>=n('capMin'))) return false;
+    if(n('capMax')!=null && !(c.cap<=n('capMax'))) return false;
+    if(n('tvMin')!=null && !(c.tv>=n('tvMin'))) return false;
+    if(n('ratioMin')!=null && !(x.ratio*100>=n('ratioMin'))) return false;
+    if(n('holdMin')!=null && !(x.hold*100>=n('holdMin'))) return false;
+    if(n('loanMin')!=null && !(x.loan/1e8>=n('loanMin'))) return false;
+    if(n('loanMax')!=null && !(x.loan/1e8<=n('loanMax'))) return false;
+    if(n('rateMin')!=null && !(x.rate>=n('rateMin'))) return false;
+    if(f.nonBank && !x.nonBank) return false;
+    if(n('daysMax')!=null && !(x.days!=null && x.days<=n('daysMax'))) return false;
+    if(f.lender && !c.rows.some(r=>r.lt===f.lender)) return false;
+    if(n('scoreMin')!=null && !(x.score>=n('scoreMin'))) return false;
+    if(n('ageMax')!=null && !(x.age!=null && x.age<=n('ageMax'))) return false;
+    if(f.ptype && !c.rows.some(r=>r.pt===f.ptype)) return false;
+    if(f.ceo){ const v = Object.values(c.ceo||{}); if(f.ceo==='__ceo__' ? !v.some(k=>k==='CEO'||k==='CEO_RELATED') : !v.includes(f.ceo)) return false; }
+    if(f.excludeHigh && x.high) return false;
+    if(f.opPos && fin.op3!==true) return false;
+    if(n('debtMax')!=null && !(fin.debt_ratio!=null && fin.debt_ratio<=n('debtMax'))) return false;
+    if(n('ndMax')!=null && !(fin.nd_ebitda!=null && fin.nd_ebitda<=n('ndMax'))) return false;
+    if(f.auditOk && c.audit!=='적정') return false;
+    if(f.noStage && c.stage) return false;
+    return true;
+  });
+}
+function pledgeSorted(list){
+  const col = PCOLS.find(c=>c.key===PST.sortKey) || PCOLS[0];
+  return list.sort((a,b)=>{
+    const av = col.get(a), bv = col.get(b);
+    const an = av==null || av==='', bn = bv==null || bv==='';
+    if(an && bn) return 0; if(an) return 1; if(bn) return -1;
+    return (typeof av==='string' ? av.localeCompare(bv,'ko') : av-bv) * PST.sortDir;
+  });
+}
+
+function loadPledge(){
+  if(!pledgePromise){
+    pledgePromise = fetch(PLEDGE_URL + '?t=' + Date.now()).then(r=>r.ok ? r.json() : null).catch(()=>null).then(d=>{
+      pledgeData = d && Array.isArray(d.companies) ? d : null;
+      pledgeLoaded = true;
+      if(pledgeData) pledgeRecompute();
+      renderNav();
+      return pledgeData;
+    });
+  }
+  return pledgePromise;
+}
+
+function renderPledgeView(){
+  const root = document.getElementById('pledgeView');
+  if(!pledgeData){
+    root.innerHTML = `<div class="panel empty">${pledgeLoaded ? '주담대 데이터가 아직 없습니다. 수집(pledge.py update)이 한 번 이상 실행된 뒤 표시됩니다.' : '불러오는 중...'}</div>${pledgeDisclaimer()}`;
+    document.getElementById('emptyState').style.display = 'none';
+    if(!pledgeLoaded) loadPledge().then(()=>{ if(currentView==='pledge') renderPledgeView(); });
+    return;
+  }
+  const all = pledgeData.companies, A = pA();
+  const sumLoan = all.reduce((a,c)=>a+(c.x.loan||0), 0);
+  const cards = [
+    {label:'주담대 보유 상장사', n:all.length.toLocaleString(), on:!PST.f.daysMax && !PST.f.nonBank, apply:()=>{ delete PST.f.daysMax; delete PST.f.nonBank; }},
+    {label:'총 대출액(억원)', n:fE1(sumLoan), on:false, apply:null},
+    {label:'30일 내 만기 도래 기업', n:all.filter(c=>c.x.days!=null && c.x.days>=0 && c.x.days<=30).length.toLocaleString(), tone:'amber', on:PST.f.daysMax==='30', apply:()=>{ PST.f.daysMax='30'; delete PST.f.nonBank; }},
+    {label:'2금융권·사채 차입 기업', n:all.filter(c=>c.x.nonBank).length.toLocaleString(), tone:'dark', on:!!PST.f.nonBank, apply:()=>{ PST.f.nonBank=true; delete PST.f.daysMax; }},
+  ];
+  const industries = [...new Set(all.map(c=>c.ind).filter(Boolean))].sort();
+  const groups = [...new Set(PF.map(d=>d.g))];
+  const ctl = d => {
+    const v = PST.f[d.id];
+    if(d.type==='check') return `<div class="field check"><input type="checkbox" id="pf_${d.id}" data-pf="${d.id}" ${v?'checked':''}><label for="pf_${d.id}">${esc(d.label)}</label></div>`;
+    if(d.type==='select'){ const opts = d.opts==='industry' ? [['','전체'], ...industries.map(i=>[i,i])] : d.opts;
+      return `<div class="field"><label for="pf_${d.id}">${esc(d.label)}</label><select id="pf_${d.id}" data-pf="${d.id}">${opts.map(([a,b])=>`<option value="${esc(a)}" ${a===(v||'')?'selected':''}>${esc(b)}</option>`).join('')}</select></div>`; }
+    return `<div class="field"><label for="pf_${d.id}">${esc(d.label)}</label><input id="pf_${d.id}" type="${d.type}" data-pf="${d.id}" value="${esc(v||'')}"></div>`;
+  };
+  const st = pledgeData.status || {};
+  root.innerHTML = `
+    <div class="cards">${cards.map((c,i)=>`<button class="card ${c.on?'on':''} ${c.tone?'tone-'+c.tone:''}" data-pcard="${i}" ${c.apply?'':'style="cursor:default;"'} aria-pressed="${c.on}"><div class="num">${c.n}</div><div class="lbl">${esc(c.label)}</div></button>`).join('')}</div>
+    <div class="panel" id="pledgeFilters">${groups.map((g,i)=>`<div class="${i?'fin-group':''}"><div class="glabel" style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px;">${esc(g)}</div><div class="controls-row">${PF.filter(d=>d.g===g).map(ctl).join('')}</div></div>`).join('')}</div>
+    <div class="panel" id="pledgeAssump" style="display:${PST.showAssump?'block':'none'};"></div>
+    <div class="panel" id="pledgeReview" style="display:${PST.showReview?'block':'none'};"></div>
+    <div class="pl-charts">
+      <div class="panel"><h4>가중금리 × 대주주 보유 대비 담보비율 <span class="note" style="font-weight:400;">· 버블 크기 = 대출액, 빨간색 = 고위험, 점 클릭 시 상세</span></h4><div class="pl-chart"><canvas id="plScatter"></canvas></div></div>
+      <div class="panel"><h4>만기 도래 타임라인 (월별 대출액, 억원)</h4><div class="pl-chart"><canvas id="plTimeline"></canvas></div></div>
+    </div>
+    <div class="toolbar"><div class="count" id="plCount"></div><div class="actions">
+      <button class="secondary" id="plReset">필터 초기화</button>
+      <button class="secondary" id="plCsv">CSV 내보내기</button>
+      <button class="ghost ${PST.showAssump?'on':''}" id="plAssumpBtn" aria-expanded="${PST.showAssump}">가정 패널</button>
+      <button class="ghost ${PST.showReview?'on':''}" id="plReviewBtn" aria-expanded="${PST.showReview}">검토 큐 ${(pledgeData.review||[]).length}</button>
+      <button class="ghost ${pledgeLocal.codename?'on':''}" id="plCodename" aria-pressed="${pledgeLocal.codename}">코드네임 표시</button>
+      <button class="ghost ${PST.showNote?'on':''}" id="plNoteBtn" aria-expanded="${PST.showNote}">ⓘ 기준 설명</button>
+    </div></div>
+    <div class="note-panel" id="plNote" style="display:${PST.showNote?'block':'none'};">
+      <b>데이터</b>: DART 주식등의대량보유상황보고서(일반)의 「보유주식등에 관한 계약」 표를 (종목, 보고자)별 최신 보고서 기준으로 집계합니다. 주식담보대출·금전소비대차만 포함하고 납세담보 공탁·CB 담보·대차·콜옵션은 제외합니다(상세 패널에 별도 표시).
+      대출 단위는 (담보제공자, 대출기관, 만기일)이 같은 계약을 합산한 것이며, 가정 패널에서 행 단위로 바꿀 수 있습니다.<br>
+      <b>커버리지 한계</b>: 5% 미만 보유자의 담보계약은 이 보고서로 잡히지 않습니다. 보고 의무 발생 시점(1% 이상 변동, 주요계약 체결·변경 등)에만 보고되므로 최신 보고 이후 상환·변경이 반영되지 않았을 수 있습니다(보고 경과 ${A.stale}일 초과 시 "정보 노후").<br>
+      <b>수집 현황</b>: 공시 수집 ${esc(formatDate(pledgeData.collected_through)||'-')}까지 · 주가 기준일 ${esc(formatDate(pledgeData.asof)||'-')} · 빌드 ${esc((pledgeData.built_at||'').replace('T',' '))} ·
+      보고서 ${(st.reports||0).toLocaleString()}건(${Object.entries(st.by_status||{}).map(([k,v])=>`${esc({parsed:'파싱',pending:'대기',failed:'실패',skipped:'생략'}[k]||k)} ${v.toLocaleString()}`).join(', ')}) · 현재 스냅샷 ${(st.current||0).toLocaleString()}건 중 계약 기재 ${(st.current_with_contracts||0).toLocaleString()}건
+    </div>
+    <div class="tablewrap"><table id="pledgeTable"><thead id="plHead"></thead><tbody id="plBody"></tbody></table></div>
+    <div class="pager" id="plPager"></div>
+    ${pledgeDisclaimer()}`;
+
+  root.querySelectorAll('[data-pcard]').forEach(b=>b.addEventListener('click', ()=>{ const c = cards[Number(b.dataset.pcard)]; if(!c.apply) return; c.apply(); PST.page=0; renderPledgeView(); }));
+  root.querySelectorAll('[data-pf]').forEach(el=>{
+    el.addEventListener(el.tagName==='SELECT' || el.type==='checkbox' ? 'change' : 'input', ()=>{
+      const k = el.dataset.pf;
+      if(el.type==='checkbox'){ if(el.checked) PST.f[k]=true; else delete PST.f[k]; }
+      else if(el.value==='') delete PST.f[k]; else PST.f[k]=el.value;
+      PST.page = 0; renderPledgeResults();
+      root.querySelectorAll('[data-pcard]').forEach((b,i)=>b.classList.toggle('on', !!cards[i].apply && (i===0 ? !PST.f.daysMax && !PST.f.nonBank : i===2 ? PST.f.daysMax==='30' : !!PST.f.nonBank)));
+    });
+  });
+  document.getElementById('plReset').addEventListener('click', ()=>{ PST.f = {}; PST.page = 0; renderPledgeView(); });
+  document.getElementById('plCsv').addEventListener('click', pledgeCsv);
+  document.getElementById('plAssumpBtn').addEventListener('click', ()=>{ PST.showAssump = !PST.showAssump; renderPledgeView(); });
+  document.getElementById('plReviewBtn').addEventListener('click', ()=>{ PST.showReview = !PST.showReview; renderPledgeView(); });
+  document.getElementById('plNoteBtn').addEventListener('click', ()=>{ PST.showNote = !PST.showNote; renderPledgeView(); });
+  document.getElementById('plCodename').addEventListener('click', ()=>{ pledgeLocal.codename = !pledgeLocal.codename; lsSave(); renderPledgeView(); if(pledgeSelected) openPledgeDetail(pledgeSelected); });
+  renderPledgeAssump();
+  renderPledgeReview();
+  renderPledgeResults();
+  document.getElementById('emptyState').style.display = 'none';
+}
+
+function pledgeDisclaimer(){
+  return `<div class="disclaimer">본 데이터는 DART 공시 기반이며, 최신 보고 이후 상환·변경 내역은 반영되지 않았을 수 있습니다.<br>
+    대주주 접촉, 지분 취득 구조(공개매수 해당 여부, 대량보유 보고, 미공개중요정보 이용 금지 등)는 사내 법무팀 또는 외부 자문사 확인이 필요합니다.<br>
+    스트레스 스코어는 우선순위 정렬용 참고지표이며 투자판단 기준이 아닙니다. 내부 메모·코드네임은 이 브라우저에만 저장되며, 내보낸 파일에 민감정보가 있으면 접근 권한이 있는 사람에게만 전달하십시오.</div>`;
+}
+
+function renderPledgeAssump(){
+  const el = document.getElementById('pledgeAssump'); if(!el || !PST.showAssump) return;
+  const A = pA(), D = pDefaults(pledgeData), S = pledgeData.stress_score;
+  const num = (id, label, step='1') => `<div class="field"><label for="pa_${id}">${esc(label)}</label><input type="number" step="${step}" id="pa_${id}" data-pa="${id}" value="${esc(A[id])}"></div>`;
+  const pts = (label, a, b, la, lb) => `<div class="field"><label>${esc(label)}</label><div class="pts">${esc(la)} <input type="number" data-pa="${a}" value="${esc(A[a])}">${b?` ${esc(lb)} <input type="number" data-pa="${b}" value="${esc(A[b])}">`:''}</div></div>`;
+  el.innerHTML = `<h4 style="margin:0 0 10px;font-size:13px;color:var(--navy);">가정 패널 <span class="note" style="font-weight:400;">· 값을 바꾸면 즉시 재계산되며 이 브라우저에만 저장됩니다</span></h4>
+    <div class="assump-grid">
+      <div class="field"><label for="pa_mode">집계 모드</label><select id="pa_mode" data-pa="mode"><option value="facility" ${A.mode==='facility'?'selected':''}>대출 단위(Facility)</option><option value="row" ${A.mode==='row'?'selected':''}>계약 행 단위</option></select></div>
+      ${num('stale','정보 노후 기준(보고 경과일)')}
+      ${num('shortDays','단기 롤오버 기준(계약기간 일수 이하)')}
+      ${num('sale','경영권 유지 여유: 매각가정지분(%p)','0.1')}
+      <div class="field"><label>주가 기준일</label><div style="padding:6px 0;font-weight:700;">${esc(formatDate(pledgeData.asof)||'-')}</div></div>
+    </div>
+    <div class="fin-group"><div class="glabel" style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px;">스트레스 스코어 점수 (구간 기준은 pledge_rules.json)</div>
+    <div class="assump-grid pts-grid">
+      ${pts('만기 잔여', 'd1','d2', `≤${S.maturity_days[0].lte}일·경과`, `≤${S.maturity_days[1].lte}일`)}
+      ${pts('보유 대비 담보', 'h1','h2', `>${S.pledge_to_holding[0].gt*100}%`, `≥${S.pledge_to_holding[1].gte*100}%`)}
+      ${pts('대출기관', 'l3','l2', '사채·대부·개인', '2금융권·기타')}
+      ${pts('단기 롤오버 / 추가담보', 'roll','add', '롤오버', '추가담보')}
+    </div></div>
+    <div style="margin-top:10px;"><button class="secondary" id="paReset">기본값으로</button> <span class="note">기본값: ${D.mode==='facility'?'대출 단위':'행 단위'} 집계 · 노후 ${D.stale}일 · 매각가정 ${D.sale}%p</span></div>`;
+  el.querySelectorAll('[data-pa]').forEach(inp=>inp.addEventListener(inp.tagName==='SELECT'?'change':'input', ()=>{
+    const next = Object.assign({}, pA());
+    next[inp.dataset.pa] = inp.tagName==='SELECT' ? inp.value : (inp.value==='' ? D[inp.dataset.pa] : Number(inp.value));
+    pledgeLocal.A = next; lsSave(); pledgeRecompute(); renderPledgeResults();
+    if(pledgeSelected) openPledgeDetail(pledgeSelected);
+  }));
+  document.getElementById('paReset').addEventListener('click', ()=>{ pledgeLocal.A = null; lsSave(); pledgeRecompute(); renderPledgeView(); if(pledgeSelected) openPledgeDetail(pledgeSelected); });
+}
+
+function renderPledgeReview(){
+  const el = document.getElementById('pledgeReview'); if(!el || !PST.showReview) return;
+  const rv = pledgeData.review || [];
+  el.innerHTML = `<h4 style="margin:0 0 8px;font-size:13px;color:var(--navy);">수동 검토 큐 (${rv.length}건)</h4>` + (rv.length ? `<ul class="review-list">${rv.map(r=>{
+    const c = pledgeData.companies.find(x=>x.code===r.code);
+    return `<li>${c ? `<a href="#pledge" data-rvopen="${esc(r.code)}" style="color:var(--blue);">${esc(c ? dispName(c) : r.name)}</a>` : esc(pledgeLocal.codename ? '(코드네임 미지정)' : (r.name||r.code||''))} ${flagBadges(new Set(r.reasons))}
+      ${r.rcept_nos.map(n=>`<a href="${dartUrl(n)}" target="_blank" rel="noopener" class="when">${esc(n)}</a>`).join(' ')}${r.error?` <span class="when">${esc(r.error)}</span>`:''}</li>`; }).join('')}</ul>` : '<div class="note">검토할 항목이 없습니다.</div>');
+  el.querySelectorAll('[data-rvopen]').forEach(a=>a.addEventListener('click', e=>{ e.preventDefault(); openPledgeDetail(a.dataset.rvopen); }));
+}
+
+function renderPledgeResults(){
+  const list = pledgeSorted(pledgeFilter());
+  const pages = Math.max(1, Math.ceil(list.length/PAGE_SIZE));
+  if(PST.page>=pages) PST.page = pages-1;
+  const thead = document.getElementById('plHead');
+  thead.innerHTML = '<tr class="lab">' + PCOLS.map(c=>`<th data-pk="${c.key}" class="${[c.num?'num':'', c.ctr?'ctr':'', c.sticky?'sticky':''].join(' ')}" style="top:0;" aria-sort="${c.key===PST.sortKey?(PST.sortDir>0?'ascending':'descending'):'none'}">${esc(c.label)}${c.tip?`<span class="tip" title="${esc(c.tip)}">ⓘ</span>`:''}${c.key===PST.sortKey?`<span class="arr">${PST.sortDir>0?'▲':'▼'}</span>`:''}</th>`).join('') + '</tr>';
+  thead.querySelectorAll('th').forEach(th=>th.addEventListener('click', ()=>{
+    const k = th.dataset.pk, col = PCOLS.find(c=>c.key===k);
+    if(PST.sortKey===k) PST.sortDir *= -1; else { PST.sortKey = k; PST.sortDir = col.txt || k==='days' ? 1 : -1; }
+    renderPledgeResults();
+  }));
+  const page = list.slice(PST.page*PAGE_SIZE, (PST.page+1)*PAGE_SIZE);
+  document.getElementById('plBody').innerHTML = page.map(c=>`<tr data-pcode="${esc(c.code)}" class="${c.code===pledgeSelected?'selected':''}">${PCOLS.map(col=>{
+    const cls = [col.num?'num':'', col.ctr?'ctr':'', col.sticky?'sticky':'', col.cls?col.cls(c):''].join(' ').trim();
+    return `<td class="${cls}">${col.cell(c)}</td>`; }).join('')}</tr>`).join('') || `<tr><td colspan="${PCOLS.length}" style="text-align:center;padding:20px;color:var(--ink-mute);">결과 없음</td></tr>`;
+  document.querySelectorAll('#plBody tr[data-pcode]').forEach(tr=>tr.addEventListener('click', e=>{ if(e.target.closest('a')) return; openPledgeDetail(tr.dataset.pcode); }));
+  const pg = document.getElementById('plPager');
+  if(pages<=1) pg.innerHTML = '';
+  else {
+    pg.innerHTML = `<button data-ppg="${PST.page-1}" ${PST.page===0?'disabled':''} aria-label="이전 쪽">‹</button><span>${PST.page+1} / ${pages}</span><button data-ppg="${PST.page+1}" ${PST.page===pages-1?'disabled':''} aria-label="다음 쪽">›</button>`;
+    pg.querySelectorAll('[data-ppg]').forEach(b=>b.addEventListener('click', ()=>{ PST.page = Number(b.dataset.ppg); renderPledgeResults(); }));
+  }
+  const loan = list.reduce((a,c)=>a+(c.x.loan||0), 0);
+  document.getElementById('plCount').innerHTML = `<b>${list.length.toLocaleString()}</b>개사 · 대출 ${fE1(loan)}억원 · 행 클릭 시 상세`;
+  renderPledgeCharts(list);
+}
+
+function renderPledgeCharts(list){
+  pledgeCharts.forEach(ch=>ch.destroy()); pledgeCharts = [];
+  if(typeof Chart==='undefined') return;
+  const pts = list.filter(c=>c.x.rate!=null && c.x.hold!=null).map(c=>({x:+c.x.rate.toFixed(2), y:+(c.x.hold*100).toFixed(1), r:Math.max(3, Math.min(22, Math.sqrt((c.x.loan||0)/1e8)*1.6)), c}));
+  pledgeCharts.push(new Chart(document.getElementById('plScatter'), {
+    type:'bubble',
+    data:{datasets:[{data:pts, backgroundColor:pts.map(p=>p.c.x.high ? 'rgba(198,40,40,.45)' : 'rgba(31,75,143,.40)'), borderColor:pts.map(p=>p.c.x.high ? '#c62828' : '#1f4b8f'), borderWidth:1}]},
+    options:{responsive:true, maintainAspectRatio:false,
+      onClick:(e, els)=>{ if(els.length) openPledgeDetail(pts[els[0].index].c.code); },
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:t=>{ const p = pts[t.dataIndex]; return `${dispName(p.c)} · 가중금리 ${p.x}% · 보유 대비 ${p.y}% · 대출 ${fE1(p.c.x.loan)}억`; }}}},
+      scales:{x:{title:{display:true, text:'가중평균 금리(%, 금리 기재 계약)', font:{size:11}}, grid:{color:'#e3e5e1'}, ticks:{font:{size:10}}},
+              y:{title:{display:true, text:'보유 대비 담보비율(%)', font:{size:11}}, min:0, grid:{color:'#e3e5e1'}, ticks:{font:{size:10}}}}},
+  }));
+  const asofIso = isoOf(pledgeData.asof) || new Date().toISOString().slice(0,10);
+  const months = []; const d0 = new Date(asofIso.slice(0,7)+'-01T00:00:00');
+  for(let i=0;i<12;i++){ const d = new Date(d0.getFullYear(), d0.getMonth()+i, 1); months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`); }
+  const buckets = {'경과':0, ...Object.fromEntries(months.map(m=>[m,0])), '이후':0};
+  list.forEach(c=>c.x.facs.forEach(f=>{ if(!f.mt || !f.l) return; const m = f.mt.slice(0,7); const k = f.mt < asofIso ? '경과' : (m in buckets ? m : '이후'); buckets[k] += f.l/1e8; }));
+  const labels = Object.keys(buckets);
+  pledgeCharts.push(new Chart(document.getElementById('plTimeline'), {
+    type:'bar',
+    data:{labels:labels.map(l=>l.length===7 ? l.slice(2).replace('-','.') : l), datasets:[{data:labels.map(l=>Math.round(buckets[l]*10)/10), backgroundColor:labels.map((l,i)=>l==='경과' ? '#8a5a06' : i<=1 ? '#c62828' : '#7f97c2')}]},
+    options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:t=>`${t.parsed.y.toLocaleString()}억원`}}},
+      scales:{x:{grid:{display:false}, ticks:{font:{size:10}}}, y:{grid:{color:'#e3e5e1'}, ticks:{font:{size:10}}}}},
+  }));
+}
+
+function pledgeCsv(){
+  const list = pledgeSorted(pledgeFilter());
+  const cols = PCOLS.filter(c=>c.key!=='flags');
+  const plain = (c, col) => { const v = col.get(c); if(col.num) return v==null ? '' : (['ratio','hold'].includes(col.key) ? (v*100).toFixed(2) : ['loan','value'].includes(col.key) ? (v/1e8).toFixed(1) : v); return v ?? ''; };
+  const head = [...cols.map(c=>c.label + (['ratio','hold','rate','debt'].includes(c.key)?'(%)':'')), '플래그', '대출기관', '공시 원문'];
+  const q = s => `"${String(s).replace(/"/g,'""')}"`;
+  const lines = [head.map(q).join(',')].concat(list.map(c=>[...cols.map(col=>plain(c,col)), [...c.x.flags].map(f=>(FLAG_INFO[f]||[f])[0]).join(' / '),
+    [...new Set(c.rows.map(r=>r.ln).filter(Boolean))].join(' / '), c.reports.map(r=>dartUrl(r.rcept_no)).join(' ')].map(q).join(',')));
+  const A = pA();
+  lines.push('', q(`가정: ${A.mode==='facility'?'대출 단위':'행 단위'} 집계 · 주가 기준일 ${formatDate(pledgeData.asof)} · 출처 DART 대량보유상황보고서(일반)`));
+  if(pledgeLocal.codename) lines.push(q('코드네임 표시 모드로 내보냄'));
+  const blob = new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `주담대스크리닝_${pledgeData.asof||''}.csv`;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
+
+function openPledgeDetail(code){
+  const c = pledgeData && pledgeData.companies.find(x=>x.code===code); if(!c) return;
+  pledgeSelected = code;
+  const x = c.x, A = pA(), fin = c.fin || {};
+  const dr = document.getElementById('drawer');
+  dr.classList.add('open'); dr.setAttribute('aria-hidden','false'); document.body.classList.add('drawer-open');
+  document.getElementById('stockDetail').style.display = 'none';
+  const el = document.getElementById('pledgeDetail'); el.style.display = 'block';
+  document.getElementById('detailName').textContent = pledgeLocal.codename ? dispName(c) : `${c.name} (${c.code})`;
+  document.getElementById('detailSub').textContent = `${c.market||''}${c.ind?' · '+c.ind:''} · 현재가 ${fN(c.px)}원 (${formatDate(pledgeData.asof)}) · 시가총액 ${fmtEok(c.cap)}억${c.halted?' · 거래정지':''}${c.stage?' · '+c.stage:''}`;
+  const memo = memoOf(code) || {};
+  const exl = Object.entries(c.excluded||{});
+  el.innerHTML = `
+    <h4>요약</h4>
+    <div class="kv">
+      <div><span>총 대출액</span><b>${fE1(x.loan)}억원</b></div>
+      <div><span>담보주식</span><b>${fN(x.sh)}주</b></div>
+      <div><span>담보지분율</span><b>${fP2(x.ratio)}</b></div>
+      <div><span>보유 대비 담보</span><b>${fP2(x.hold)}</b></div>
+      <div><span>가중평균 금리</span><b>${fR(x.rate)}</b></div>
+      <div><span>최근접 만기</span><b>${esc(x.mt||'-')}${x.days!=null?` (${x.days<0?'경과 '+(-x.days)+'일':'D-'+x.days})`:''}</b></div>
+      <div><span>담보주식 시가</span><b>${fE1(x.value)}억원</b></div>
+      <div><span>대출기관 유형</span><b>${esc([...new Set(x.facs.map(f=>f.lt))].join('·'))}</b></div>
+      <div><span>경영권 유지 여유</span><b>${x.buffer==null?'-':x.buffer.toFixed(2)+'%p'}</b></div>
+      <div><span>스트레스 스코어</span><b>${x.score}</b></div>
+      <div><span>대표이사 매칭</span><b>${esc(CEO_LABEL[c.ceo_best]||'-')}</b></div>
+    </div>
+    <div class="note">스코어 구성: 만기 ${x.parts.maturity} · 보유 대비 ${x.parts.hold} · 대출기관 ${x.parts.lender} · 롤오버 ${x.parts.roll} · 추가담보 ${x.parts.add} (참고지표, 투자판단 기준 아님)<br>
+      산식: 담보지분율 = Σ담보주식 ÷ 의결권 있는 발행주식 · 보유 대비 담보 = Σ담보주식 ÷ 보고자+특관 보유주식 · 담보주식 시가 = Σ담보주식 × 기준일 종가 · 경영권 유지 여유 = 보고자+특관 보유비율 − 매각가정 ${A.sale}%p.</div>
+    <div>${flagBadges(x.flags)}</div>
+
+    <h4>대출 단위 집계 (${A.mode==='facility'?'담보제공자·대출기관·만기 기준 합산':'계약 행 단위'})</h4>
+    <div class="tblscroll"><table class="fin-tbl"><thead><tr><th style="text-align:left;">담보제공자</th><th style="text-align:left;">대출기관</th><th>만기</th><th class="num">담보주식</th><th class="num">대출액(억)</th><th class="num">금리</th><th class="num">담보유지비율(공시)</th></tr></thead>
+    <tbody>${x.facs.map(f=>`<tr><td>${esc(f.p)} <span class="when">${esc(PT_LABEL[f.pt]||'')}${f.rel==='S'?'·특관':''}</span>${CEO_LABEL[(c.ceo||{})[f.p]]&&(c.ceo||{})[f.p]!=='CORPORATE'?` <span class="when">${esc(CEO_LABEL[c.ceo[f.p]])}</span>`:''}</td>
+      <td>${esc(f.ln||'-')} <span class="when">${esc(f.lt||'')}</span></td><td class="ctr">${esc(f.mt||'-')}</td><td class="num">${fN(f.sh)}</td><td class="num">${fE1(f.l)}</td><td class="num">${fR(f.r)}</td>
+      <td class="num">${f.k==null?'-':f.k+'%'}</td></tr>
+      ${f.flags.size?`<tr><td colspan="7" style="padding-top:0;">${flagBadges(f.flags)}</td></tr>`:''}`).join('')}</tbody></table></div>
+
+    <h4>계약 행 (공시 원문 기재값)</h4>
+    <div class="tblscroll"><table class="fin-tbl"><thead><tr><th>연번</th><th style="text-align:left;">담보제공자</th><th class="num">주식 수</th><th style="text-align:left;">계약 상대방</th><th style="text-align:left;">계약종류</th><th>계약일</th><th style="text-align:left;">계약기간(원문)</th><th class="num">대출액(원)</th><th style="text-align:left;">채무자</th><th class="num">금리</th><th class="num">유지비율</th><th style="text-align:left;">비고·기타</th></tr></thead>
+    <tbody>${c.rows.map(r=>`<tr><td class="ctr"><a href="${dartUrl(r.rc)}" target="_blank" rel="noopener" style="color:var(--blue);">${esc(r.seq??'-')}</a></td><td>${esc(r.p)} <span class="when">${r.rel==='S'?'특관':'본인'}</span></td><td class="num">${fN(r.sh)}</td>
+      <td>${esc(r.ln||'-')}</td><td>${esc(r.ck||'')} <span class="when">${esc(CT_LABEL[r.ct]||r.ct)}</span></td><td class="ctr">${esc(r.cd||'-')}</td><td>${esc(r.pr||'-')}</td><td class="num">${fN(r.l)}</td><td>${esc(r.d||'-')}</td>
+      <td class="num">${r.r==null?'-':fR(r.r)}</td><td class="num">${r.k==null?'-':r.k+'%'}</td><td>${esc([r.rmk, r.etc].filter(Boolean).join(' / ')||'-')} ${flagBadges(new Set(r.f||[]))}</td></tr>`).join('')}</tbody></table></div>
+    ${exl.length?`<div class="note">스크리닝 제외 계약: ${exl.map(([k,v])=>`${esc(v.label)} ${v.n}건 ${fN(v.sh)}주`).join(' · ')}${c.excluded.TAX_DEPOSIT?' — 납세담보 공탁은 상속·증여 재원 마련 시그널일 수 있습니다.':''}</div>`:''}
+
+    <h4>보고서·지분 구조</h4>
+    ${c.reports.map(r=>`<div style="margin-bottom:10px;">
+      <div style="font-size:12.5px;"><a href="${dartUrl(r.rcept_no)}" target="_blank" rel="noopener" style="color:var(--blue);">${esc(r.report_nm||'보고서')}</a> <span class="when">보고의무발생일 ${esc(r.report_date||'-')} · 접수 ${esc(formatDate(r.rcept_dt))}${x.age!=null && r===x.latest?` · 경과 ${x.age}일`:''}</span></div>
+      <div class="note" style="margin-top:2px;">보고자 ${esc(r.reporter_name||'-')} (${esc(PT_LABEL[r.reporter_type]||r.reporter_type||'-')}${r.reporter_job?' · '+esc(r.reporter_job):''}) · 보고자+특별관계자 보유 ${fN(r.holding_cnt)}주 (${r.holding_rt==null?'-':r.holding_rt.toFixed(2)+'%'}) · 의결권 있는 발행주식 ${fN(r.voting_shares)}주 · 계약 합계비율 ${r.sum_trd_rt==null?'-':r.sum_trd_rt.toFixed(2)+'%'}</div>
+      ${(r.holders||[]).length?`<table class="fin-tbl" style="margin-top:4px;"><thead><tr><th style="text-align:left;">보유자</th><th class="num">보유주식</th><th class="num">비율</th></tr></thead><tbody>${r.holders.map(h=>`<tr><td>${esc(h.name)}</td><td class="num">${fN(h.cnt)}</td><td class="num">${h.rt==null?'-':h.rt.toFixed(2)+'%'}</td></tr>`).join('')}</tbody></table>`:''}
+    </div>`).join('')}
+
+    <h4>재무 요약${fin.y?` (${fin.y}년, 억원)`:''}</h4>
+    ${c.fin ? `<div class="kv">
+      <div><span>매출액</span><b>${fE1x(fin.rev)}</b></div><div><span>영업이익</span><b>${fE1x(fin.op)}</b></div>
+      <div><span>3개년 영업흑자</span><b>${fin.op3==null?'-':fin.op3?'예':'아니오'}</b></div><div><span>부채비율</span><b>${fin.debt_ratio==null?'-':fin.debt_ratio.toFixed(1)+'%'}</b></div>
+      <div><span>EBITDA 마진</span><b>${fin.ebitda_margin==null?'-':fin.ebitda_margin.toFixed(1)+'%'}</b></div><div><span>순차입금/EBITDA</span><b>${fin.nd_ebitda==null?'-':fin.nd_ebitda.toFixed(2)+'배'}</b></div>
+      <div><span>영업현금흐름</span><b>${fE1x(fin.ocf)}</b></div><div><span>감사의견</span><b>${esc(c.audit||'-')}</b></div>
+      <div><span>거래대금(20일 평균)</span><b>${c.tv==null?'-':c.tv.toLocaleString()+'억'}</b></div><div><span>관리종목 등</span><b>${esc(c.stage||'-')}</b></div>
+    </div><div class="note">출처: OpenDART 사업보고서(연결 우선)·대시보드 재무 지표. 회계 처리 관련 판단은 참고용이며 최종 판단은 회계법인 확인이 필요합니다.</div>` : '<div class="note">재무정보 없음</div>'}
+
+    <h4>내부 메모 <span class="when">이 브라우저에만 저장</span></h4>
+    <div class="memo">
+      <div class="controls-row">
+        <div class="field"><label for="mm_codename">코드네임</label><input type="text" id="mm_codename" value="${esc(memo.codename||'')}" placeholder="예: Project A"></div>
+        <div class="field"><label for="mm_owner">담당자</label><input type="text" id="mm_owner" value="${esc(memo.owner||'')}"></div>
+        <div class="field"><label for="mm_status">상태</label><select id="mm_status">${MEMO_STATUS.map(s=>`<option ${s===(memo.status||'미검토')?'selected':''}>${s}</option>`).join('')}</select></div>
+      </div>
+      <textarea id="mm_memo" style="margin-top:8px;" placeholder="메모">${esc(memo.memo||'')}</textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+        <button id="mm_save">저장</button><button class="secondary" id="mm_export">전체 메모 내보내기</button>
+        <label class="secondary" style="font-size:12.5px;color:var(--navy);cursor:pointer;border:1px solid var(--navy);border-radius:4px;padding:6px 12px;">메모 불러오기<input type="file" id="mm_import" accept="application/json" style="display:none;"></label>
+        <span class="when" id="mm_msg">${memo.updated?`수정 ${esc(memo.updated)}`:''}</span>
+      </div>
+      <div class="note">진행 중인 딜은 실명 대신 코드네임으로 지칭하십시오. 메모는 레포·서버로 전송되지 않으며, 내보낸 파일은 접근 권한이 있는 사람에게만 전달하십시오.</div>
+    </div>
+    ${pledgeDisclaimer()}`;
+  document.getElementById('mm_save').addEventListener('click', ()=>{
+    pledgeLocal.memos[code] = {codename:document.getElementById('mm_codename').value.trim(), owner:document.getElementById('mm_owner').value.trim(),
+      status:document.getElementById('mm_status').value, memo:document.getElementById('mm_memo').value, updated:new Date().toLocaleString('ko-KR')};
+    lsSave(); document.getElementById('mm_msg').textContent = '저장됨';
+    if(currentView==='pledge') renderPledgeResults();
+  });
+  document.getElementById('mm_export').addEventListener('click', ()=>{
+    const blob = new Blob([JSON.stringify(pledgeLocal.memos, null, 1)], {type:'application/json'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'pledge_memos.json';
+    document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  });
+  document.getElementById('mm_import').addEventListener('change', e=>{
+    const file = e.target.files[0]; if(!file) return;
+    file.text().then(t=>{ const m = JSON.parse(t); if(!m || typeof m!=='object' || Array.isArray(m)) throw new Error('형식 오류');
+      Object.entries(m).forEach(([k,v])=>{ if(/^\w{6}$/.test(k) && v && typeof v==='object') pledgeLocal.memos[k] = Object.assign({}, pledgeLocal.memos[k], v); });
+      lsSave(); openPledgeDetail(code); if(currentView==='pledge') renderPledgeResults();
+    }).catch(err=>{ document.getElementById('mm_msg').textContent = '불러오기 실패: ' + err.message; });
+  });
+  document.querySelectorAll('#plBody tr[data-pcode]').forEach(tr=>tr.classList.toggle('selected', tr.dataset.pcode===code));
 }
 
 /* ---------- 라우팅/로딩 ---------- */
 function routeFromHash(){
   const k = location.hash.replace('#','');
-  const next = VIEWS[k] ? k : 'all';
+  const next = VIEWS[k] || k==='pledge' ? k : 'all';
   if(next!==currentView){ currentView = next; closeDetail(); }
   if(stocks.length) renderView();
 }
@@ -1098,6 +1655,7 @@ function loadData(){
     const maxY = Math.max(0, ...Object.values(financialsMap).flatMap(fm=>Object.keys(fm).map(Number)));
     FISCAL_YEARS = maxY ? [maxY-2, maxY-1, maxY].map(String) : [];
     disclosuresPromise = null;
+    pledgePromise = null; loadPledge().then(()=>{ if(currentView==='pledge'){ renderPledgeView(); if(pledgeSelected) openPledgeDetail(pledgeSelected); } });
     renderView();
     if(selectedCode) openDetail(selectedCode);
   }).catch(err=>{
@@ -1107,7 +1665,7 @@ function loadData(){
   });
 }
 
-currentView = VIEWS[location.hash.replace('#','')] ? location.hash.replace('#','') : 'all';
+currentView = VIEWS[location.hash.replace('#','')] || location.hash==='#pledge' ? location.hash.replace('#','') : 'all';
 renderNav(); renderHeader();
 loadData();
 setInterval(loadData, AUTO_REFRESH_MS);

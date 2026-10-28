@@ -62,6 +62,25 @@ jobs:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
         run: python designation_stage.py update
 
+      - name: Restore pledge document cache
+        uses: actions/cache@v4
+        with:
+          path: cache/pledge
+          key: pledge-docs-${{ github.run_id }}
+          restore-keys: pledge-docs-
+
+      - name: Update share-pledge loans (OpenDART 대량보유상황보고서)
+        continue-on-error: true  # 한 단계가 실패해도 그날 수집한 시세(history)는 아래에서 커밋되도록
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        run: python pledge.py update --months 36
+
+      - name: Update pledge companies' CEO / audit opinion (OpenDART)
+        continue-on-error: true  # 한 단계가 실패해도 그날 수집한 시세(history)는 아래에서 커밋되도록
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        run: python pledge.py extra
+
       - name: Commit and push if changed
         if: always()
         run: |

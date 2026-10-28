@@ -145,6 +145,7 @@ def collect_for_date(bas_dd, config, history):
                 "close": close,
                 "list_shares": list_shares,
                 "market_cap_eok": mktcap_eok,
+                "trd_val_eok": round(to_number(r.get("ACC_TRDVAL")) / 1e6) / 100,  # 거래대금(억원), 주담대 화면 유동성 필터용
                 "below_threshold": 1 if mktcap_eok < threshold else 0,
                 "halted": halted,
             })
