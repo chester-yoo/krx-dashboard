@@ -231,9 +231,9 @@ def test_build_joins(tmp_paths, monkeypatch):
     assert hana["fin"]["op3"] is False and hana["fin"]["debt_ratio"] == 50.0
     assert hana["fin"]["nd_ebitda"] == 2.0 and hana["fin"]["ebitda_margin"] == 6.0
     assert hana["tv"] == pytest.approx(sum(range(8, 28)) / 20)
-    assert hana["m"]["score"] == 7 and len(hana["rows"]) == 2
+    assert hana["m"]["score"] == 4 and len(hana["rows"]) == 2
     lsk = next(c for c in out["companies"] if c["code"] == "091970")
-    assert lsk["px"] is None and lsk["m"]["min_margin"] is None
+    assert lsk["px"] is None and lsk["m"]["pledged_value"] is None
     assert set(lsk["excluded"]) == {"CB_COLLATERAL"}
     assert any(r["code"] == "091970" and "LEDGER_FORMAT" in r["reasons"] for r in out["review"])
     assert out["status"]["companies"] == 3

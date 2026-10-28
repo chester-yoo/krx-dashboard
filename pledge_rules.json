@@ -23,7 +23,6 @@
   ],
   "lender_default": {"type": "기타", "score": 2},
   "assumptions": {
-    "default_maintenance_ratio": 140,
     "aggregate_mode": "facility",
     "stale_report_days": 365,
     "ratio_check_tolerance_pctp": 0.1,
@@ -31,7 +30,6 @@
     "short_rollover_days": 92
   },
   "stress_score": {
-    "safety_margin": [{"lt": 0.20, "score": 3}, {"lt": 0.50, "score": 2}],
     "maturity_days": [{"lte": 30, "score": 3}, {"lte": 90, "score": 2}],
     "pledge_to_holding": [{"gt": 0.50, "score": 3}, {"gte": 0.30, "score": 2}],
     "short_rollover": 1,

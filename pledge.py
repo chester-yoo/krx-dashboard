@@ -558,7 +558,7 @@ def build(today=None):
             "audit": (ex.get("audit") or {}).get("opinion"), "stage": stage["label"] if stage else None,
             "ceo": ceo, "ceo_best": ceo_best, "reports": rep_list, "rows": rows, "excluded": excluded,
             "m": {k: m[k] for k in ("total_loan", "pledged_shares", "pledge_ratio", "pledge_to_holding", "wavg_rate",
-                                    "nearest_maturity", "days_to_maturity", "min_margin", "max_forced_price", "ltv",
+                                    "nearest_maturity", "days_to_maturity", "pledged_value",
                                     "score", "flags", "report_age_days", "latest_report_date")},
         })
         reasons = sorted({f for f in m["flags"] if f in ("DUP_SUSPECT", "REVIEW_ROWS", "SUM_MISMATCH", "SEC_UNMATCHED",

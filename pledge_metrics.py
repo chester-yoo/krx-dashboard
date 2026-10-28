@@ -7,10 +7,10 @@ pledge_parse.parse_document() 결과를 받아 화면용 수치를 만든다. �
 Facility 키 = (담보제공자, 대출기관, 만기일). 공시상 추가담보와 별개 대출이 구분되지 않으므로
 같은 키의 담보주식 수·대출금액을 합산한다(aggregate_mode='row'면 행 단위 그대로).
 
-산식 (모든 추정치는 '추정'으로 표시)
-  반대매매 추정가 = Σ대출액 × 담보유지비율 ÷ Σ담보주식      (담보유지비율 미기재 시 기본 가정값 적용, 이자·수수료·추가담보 미반영)
-  안전마진       = 현재가 ÷ 반대매매 추정가 − 1
-  현재 LTV       = Σ대출액 ÷ (Σ담보주식 × 현재가)
+PEF 투자(지분 일부 인수 + 대환) 관점이므로 주가 기반 반대매매·안전마진·LTV는 계산하지 않는다.
+담보유지비율은 공시 기재값을 그대로 보여주기만 한다.
+
+산식
   담보지분율     = Σ담보주식 ÷ 의결권 있는 발행주식 총수(보고서 기재값)
   보유 대비 담보 = Σ담보주식 ÷ 보고자+특별관계자 보유주식(보고서 '이번 보고서' 보유주식등의 수)
   가중평균 금리  = Σ(대출액×금리) ÷ Σ대출액 (금리 기재 행만)
@@ -29,15 +29,8 @@ def pledged_rows(contracts):
     return [c for c in contracts if c["included"] and c["active"] and c.get("dup") != "exact"]
 
 
-def forced_sale_price(loan, maint_ratio_pct, shares):
-    if not loan or not maint_ratio_pct or not shares:
-        return None
-    return loan * maint_ratio_pct / 100 / shares
-
-
 def build_facilities(contracts, assumptions, mode=None):
     mode = mode or assumptions.get("aggregate_mode", "facility")
-    default_kep = assumptions["default_maintenance_ratio"]
     short_days = assumptions.get("short_rollover_days", 92)
     groups = {}
     for i, c in enumerate(pledged_rows(contracts)):
@@ -68,15 +61,13 @@ def build_facilities(contracts, assumptions, mode=None):
                     short = True
         if short:
             flags.append("SHORT_ROLLOVER")
-        kep_used = kep if kep else default_kep
         facilities.append({
             "provider": first["provider"], "provider_type": first["provider_type"], "rel": first["rel"],
             "lender": first["lender"], "lender_type": first["lender_type"], "lender_score": first["lender_score"],
             "maturity": first["maturity"], "contract_type": first["contract_type"],
             "seqs": [r["seq"] for r in rows], "contract_dates": sorted({r["contract_date"] for r in rows if r["contract_date"]}),
             "shares": shares, "loan": loan, "rate": rate,
-            "maint_ratio": kep, "maint_ratio_used": kep_used, "kep_assumed": kep is None,
-            "forced_price": forced_sale_price(loan, kep_used, shares),
+            "maint_ratio": kep,
             "debtor": first["debtor"], "flags": flags,
         })
     facilities.sort(key=lambda f: (f["maturity"] or "9999", -(f["loan"] or 0)))
@@ -98,7 +89,6 @@ def stress_score(m, facilities, rules):
     cfg = rules["stress_score"]
     days = m["days_to_maturity"]
     parts = {
-        "safety_margin": band_score(m["min_margin"], cfg["safety_margin"]),
         # 만기가 이미 지났는데 후속 보고가 없으면(연장 여부 불명) 가장 높은 구간 점수
         "maturity": cfg["maturity_days"][0]["score"] if days is not None and days < 0 else band_score(days, cfg["maturity_days"]),
         "pledge_to_holding": band_score(m["pledge_to_holding"], cfg["pledge_to_holding"]),
@@ -156,14 +146,7 @@ def company_metrics(docs, price, asof, rules, assumptions=None, mode=None):
     m["days_to_maturity"] = (date.fromisoformat(nearest) - ref).days if nearest else None
     m["maturity_within_30"] = sum(1 for x in future if (date.fromisoformat(x) - ref).days <= 30)
 
-    for f in facilities:
-        f["margin"] = price / f["forced_price"] - 1 if price and f["forced_price"] else None
-    margins = [f["margin"] for f in facilities if f["margin"] is not None]
-    m["min_margin"] = min(margins) if margins else None
-    priced = [f for f in facilities if f["forced_price"]]
-    m["max_forced_price"] = max((f["forced_price"] for f in priced), default=None)
-    m["ltv"] = total_loan / (pledged * price) if total_loan and pledged and price else None
-    m["kep_assumed"] = any(f["kep_assumed"] for f in facilities)
+    m["pledged_value"] = pledged * price if pledged and price else None  # 담보주식 시가(참고: 지분 인수 규모 가늠용)
 
     m["latest_report_date"] = latest["report_date"]
     m["report_age_days"] = (ref - date.fromisoformat(latest["report_date"])).days if latest["report_date"] else None
