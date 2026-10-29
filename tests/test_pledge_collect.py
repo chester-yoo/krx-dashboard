@@ -237,3 +237,33 @@ def test_build_joins(tmp_paths, monkeypatch):
     assert set(lsk["excluded"]) == {"CB_COLLATERAL"}
     assert any(r["code"] == "091970" and "LEDGER_FORMAT" in r["reasons"] for r in out["review"])
     assert out["status"]["companies"] == 3
+
+
+def test_max_docs_counts_downloads_only(tmp_paths, monkeypatch):
+    """원문 상한은 실제로 받은 원문 수만 센다. 남은 건은 pending으로 남아 다음 실행(백필)이 이어 받는다."""
+    items = [
+        item("20261027000304", "299030", "하나기술", "오태봉", "20261027"),
+        item("20261027000385", "090410", "덕신이피씨", "김명환", "20261027"),
+        item("20261027000368", "069540", "빛과전자", "비엔에스조합", "20261027"),
+    ]
+    s = FakeSession(items, page_size=100)
+    monkeypatch.setattr(pledge.requests, "get", s.get)
+    pledge.update("KEY", max_docs=1)
+    rep = json.loads(pledge.DOCS_PATH.read_text(encoding="utf-8"))["reports"]
+    assert sorted(r["status"] for r in rep.values()) == ["parsed", "pending", "pending"]
+    assert rep["20261027000385"]["status"] == "parsed"  # 접수번호가 가장 큰(최신) 것부터
+    pledge.update("KEY")  # 다음 실행이 나머지를 이어서 받는다
+    rep = json.loads(pledge.DOCS_PATH.read_text(encoding="utf-8"))["reports"]
+    assert all(r["status"] == "parsed" for r in rep.values())
+
+
+def test_max_minutes_stops_and_saves(tmp_paths, monkeypatch):
+    items = [item("20261027000304", "299030", "하나기술", "오태봉", "20261027"),
+             item("20261027000385", "090410", "덕신이피씨", "김명환", "20261027")]
+    monkeypatch.setattr(pledge.requests, "get", FakeSession(items, page_size=100).get)
+    clock = iter([0, 0, 10_000, 10_000, 10_000])
+    monkeypatch.setattr(pledge.time, "monotonic", lambda: next(clock))
+    pledge.update("KEY", max_minutes=1)
+    store = json.loads(pledge.DOCS_PATH.read_text(encoding="utf-8"))
+    assert sorted(r["status"] for r in store["reports"].values()) == ["parsed", "pending"]
+    assert store["collected_through"]  # 목록 조회 진행분은 저장됨

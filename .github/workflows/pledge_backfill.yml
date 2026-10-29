@@ -1,0 +1,60 @@
+name: Share-pledge backfill
+
+# 주담대(대량보유상황보고서) 과거 36개월분 원문을 매일 밤 나눠 받는다. 매일 수집(daily.yml)은 신규 공시만 짧게 받고,
+# 남은 과거분은 여기서 이어서 받는다. 받을 원문이 없으면 목록만 확인하고 1~2분 안에 끝난다(실패 건 재시도 겸용).
+on:
+  schedule:
+    - cron: "0 13 * * *" # 매일 13:00 UTC = 22:00 KST (정기 수집과 시간대를 나눔)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:  # data/를 커밋하는 워크플로는 한 번에 하나만(daily.yml 주석 참고)
+  group: krx-data-write
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore pledge document cache
+        uses: actions/cache@v4
+        with:
+          path: cache/pledge
+          key: pledge-docs-${{ github.run_id }}
+          restore-keys: pledge-docs-
+
+      - name: Backfill share-pledge reports (OpenDART)
+        continue-on-error: true  # 중간에 멈춰도 그때까지 받은 분량은 아래에서 커밋
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        # 작업 시간 제한(330분) 전에 저장·빌드까지 끝내도록 원문 수집은 300분에서 멈춘다
+        run: python pledge.py update --months 36 --max-minutes 300
+
+      - name: Update pledge companies' CEO / audit opinion (OpenDART)
+        continue-on-error: true
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        run: python pledge.py extra
+
+      - name: Commit and push if changed
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "Share-pledge backfill"
+          git pull --rebase -X theirs
+          git push

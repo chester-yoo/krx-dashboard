@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+concurrency:  # data/를 커밋하는 워크플로는 한 번에 하나만(daily.yml 주석 참고)
+  group: krx-data-write
+  cancel-in-progress: false
+
 jobs:
   collect:
     runs-on: ubuntu-latest

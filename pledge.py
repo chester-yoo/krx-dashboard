@@ -14,8 +14,11 @@ cache/pledge/          원문 XML 캐시(rcept_no.xml, 커밋하지 않음)
 가장 최근 일반보고서 1건만 현재 상태로 쓴다. [기재정정]은 같은 보고의무발생일의 원보고서를 대체한다.
 
 사용법
-  python pledge.py update [--months 36] [--max-docs N] [--konex]
+  python pledge.py update [--months 36] [--max-docs N] [--max-minutes M] [--konex]
                              마지막 수집일(없으면 최근 N개월) 이후 접수분 목록 조회 -> 원문 다운로드·파싱 -> build
+                             --max-docs: 이번 실행에서 받을 원문 수 상한(최신 접수분부터). 매일 수집은 작게 두고
+                                         남은 과거분(백필)은 pledge_backfill.yml이 따로 받는다
+                             --max-minutes: 이 시간이 지나면 진행분을 저장하고 멈춘다(작업 시간 제한 대비)
   python pledge.py extra     스냅샷 회사의 임원현황·감사의견 갱신(30일 지난 것만)
   python pledge.py reparse   파서 변경 후 현재 스냅샷 보고서를 캐시(없으면 재다운로드)로 다시 파싱 -> build
   python pledge.py build     API 호출 없이 data/pledge.json만 다시 생성
@@ -232,7 +235,7 @@ def select_snapshot(reports):
     return current
 
 
-def update(key, months=36, max_docs=None, include_konex=False, budget=RUN_CALL_BUDGET):
+def update(key, months=36, max_docs=None, include_konex=False, budget=RUN_CALL_BUDGET, max_minutes=None):
     store = load_json(DOCS_PATH, {"collected_through": None, "reports": {}})
     reports = store["reports"]
     dart = Dart(key, budget)
@@ -262,11 +265,16 @@ def update(key, months=36, max_docs=None, include_konex=False, budget=RUN_CALL_B
 
     pending = sorted((n for n, r in reports.items() if r["status"] in ("pending", "failed") and r.get("tries", 0) < 3),
                      key=lambda n: n, reverse=True)  # 최신 접수분부터
-    if max_docs:
-        pending = pending[:max_docs]
     done = skipped = 0
     idx = latest_parsed_index(reports)
+    started = time.monotonic()
     for no in pending:
+        if max_docs and done >= max_docs:
+            log(f"원문 상한({max_docs}건) 도달 - 남은 원문은 백필 실행에서 받음")
+            break
+        if max_minutes and time.monotonic() - started > max_minutes * 60:
+            log(f"시간 상한({max_minutes}분) 도달 - 진행분 저장 후 중단, 남은 원문은 다음 실행에서 이어서 받음")
+            break
         r = reports[no]
         if superseded_by_parsed(idx, r):
             r["status"] = "skipped"  # 같은 보고자의 더 최근 보고서가 이미 있음 -> 원문을 받지 않는다
@@ -291,7 +299,8 @@ def update(key, months=36, max_docs=None, include_konex=False, budget=RUN_CALL_B
             log(f"진행: {done}/{len(pending)}건 (API {dart.calls}회)")
     finalize_store(store)
     save_json(DOCS_PATH, store)
-    log(f"원문 {done}건 파싱, {skipped}건 생략(최신 보고서 존재), API {dart.calls}회 호출")
+    left = sum(1 for r in reports.values() if r["status"] == "pending")
+    log(f"원문 {done}건 파싱, {skipped}건 생략(최신 보고서 존재), 대기 {left}건, API {dart.calls}회 호출")
 
 
 def filer_key(r):
@@ -605,7 +614,8 @@ def main(argv):
     args = argv[2:]
     opt = lambda name, default: int(args[args.index(name) + 1]) if name in args else default
     if cmd == "update":
-        update(key, months=opt("--months", 36), max_docs=opt("--max-docs", None), include_konex="--konex" in args)
+        update(key, months=opt("--months", 36), max_docs=opt("--max-docs", None), include_konex="--konex" in args,
+               max_minutes=opt("--max-minutes", None))
     elif cmd == "extra":
         update_extra(key)
     elif cmd == "reparse":
