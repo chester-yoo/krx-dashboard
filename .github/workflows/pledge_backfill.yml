@@ -5,7 +5,14 @@ name: Share-pledge backfill
 on:
   schedule:
     - cron: "0 13 * * *" # 매일 13:00 UTC = 22:00 KST (정기 수집과 시간대를 나눔)
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "update (과거분 이어 받기) / reparse (분류 규칙·파서 변경 후 현재 스냅샷 보고서를 캐시 원문으로 다시 파싱)"
+        required: true
+        default: update
+        type: choice
+        options: [update, reparse]
 
 permissions:
   contents: write
@@ -41,7 +48,7 @@ jobs:
         env:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
         # 작업 시간 제한(330분) 전에 저장·빌드까지 끝내도록 원문 수집은 300분에서 멈춘다
-        run: python pledge.py update --months 36 --max-minutes 300
+        run: python pledge.py ${{ inputs.mode == 'reparse' && 'reparse' || 'update --months 36 --max-minutes 300' }}
 
       - name: Update pledge companies' CEO / audit opinion (OpenDART)
         continue-on-error: true

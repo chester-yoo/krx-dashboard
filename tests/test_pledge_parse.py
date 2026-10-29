@@ -176,7 +176,10 @@ def test_parse_period(text, expected):
     ("주식대차거래계약", None, "LENDING"),
     ("주식담보제공 해지", None, "TERMINATION"),
     ("전환사채매수선택권행사자 지정", None, "CALL_OPTION"),
-    ("의결권 공동행사 약정", None, "OTHER"),
+    ("의결권 공동행사 약정", None, "NON_PLEDGE"),
+    ("공동보유약정", "주주간 합의", "NON_PLEDGE"),
+    ("대출담보", ".", "PLEDGE_LOAN"),
+    ("특약사항", None, "OTHER"),
 ])
 def test_classify_contract(kind, remark, expected):
     assert P.classify_contract(kind, remark)["type"] == expected
@@ -199,3 +202,49 @@ def test_blank_and_encoding_tolerance():
     d = P.parse_document(xml)
     assert len(d["contracts"]) == 1
     assert d["contracts"][0]["provider"] == "A & B" and d["contracts"][0]["shares"] == 1000
+
+
+def test_tax_office_counterparty_is_tax_deposit():
+    """계약 문구가 '주식 담보 제공·질권설정'이어도 상대방이 세무서면 납세담보(LG·GS·LS 실측 사례)."""
+    assert P.classify_contract("주식 담보 제공", "질권설정", lender="삼성세무서")["type"] == "TAX_DEPOSIT"
+    assert P.classify_contract("담보제공", "없음", lender="강남세무서")["type"] == "TAX_DEPOSIT"
+    assert P.classify_contract("담보제공", "없음", lender="하나은행")["type"] == "PLEDGE_LOAN"
+    assert P.classify_contract("질권설정", "질권설정 해지", lender="양천세무서")["type"] == "TERMINATION"
+
+
+def test_compound_contract_with_pledge():
+    assert P.classify_contract("주주간 계약, 근질권설정 계약", "주2, 주3")["type"] == "PLEDGE_LOAN"
+    assert P.classify_contract("공동보유계약", "질권설정 및공동보유 약정")["type"] == "PLEDGE_LOAN"
+    assert P.classify_contract("주주간 계약", "주1)")["type"] == "NON_PLEDGE"
+
+
+@pytest.mark.parametrize("text,base,expected,flag", [
+    ("1년", date(2026, 3, 31), date(2027, 3, 31), "MATURITY_DERIVED"),
+    ("6개월", date(2026, 8, 31), date(2027, 2, 28), "MATURITY_DERIVED"),
+    ("1년 1개월", date(2026, 1, 15), date(2027, 2, 15), "MATURITY_DERIVED"),
+    ("91일", date(2026, 10, 1), date(2026, 12, 31), "MATURITY_DERIVED"),
+    ("~ 2027.07", None, date(2027, 7, 31), "MATURITY_DERIVED"),
+    ("3개월단위 자동연장", date(2026, 1, 1), None, "AUTO_RENEW"),
+    ("대출기간 종료 시 매년 갱신", date(2026, 1, 1), None, "AUTO_RENEW"),
+    ("채무상환시까지", date(2026, 1, 1), None, None),
+    ("1년", None, None, None),
+])
+def test_derive_maturity(text, base, expected, flag):
+    assert P.derive_maturity(text, base) == (expected, flag)
+
+
+def test_shared_facility_split():
+    """여러 특수관계인이 하나의 대출(955억, 채무자 제3자)에 공동담보 -> 대출액을 주식 수 비율로 한 번만 반영(KZ정밀 실측 사례)."""
+    rows = []
+    for i, (nm, sh) in enumerate([("유미개발(주)", 851490), ("유중근", 987700), ("정지혜", 188030)], 1):
+        rows.append({"seq": i, "provider": nm, "provider_type": "INDIVIDUAL", "rel": "S", "shares": sh, "lender": "㈜하나은행",
+                     "included": True, "active": True, "dup": None, "loan": 95_500_000_000, "debtor": "제리코파트너스(주)",
+                     "maturity": "2027-06-30", "flags": []})
+    P.split_shared_loans(rows)
+    assert sum(r["loan"] for r in rows) == pytest.approx(95_500_000_000, abs=3)
+    assert all("SHARED_FACILITY" in r["flags"] for r in rows)
+    # 채무자 미기재(각자 본인 대출)면 금액이 같아도 나누지 않는다
+    for r in rows:
+        r.update(debtor=None, loan=250_000_000, flags=[])
+    P.split_shared_loans(rows)
+    assert all(r["loan"] == 250_000_000 for r in rows)

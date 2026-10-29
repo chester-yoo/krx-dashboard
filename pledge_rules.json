@@ -1,27 +1,246 @@
 {
   "_comment": "주담대 스크리닝 분류 사전·매핑·가정값. 규칙은 위에서부터 차례로 검사해 처음 맞는 것을 쓴다. 계약유형은 TRD_KND + TRD_RMK 문자열에서 찾는다.",
   "contract_types": [
-    {"type": "TERMINATION", "label": "해지·상환", "include": false, "keywords": ["해지", "상환합의", "상환 합의", "삭제"]},
-    {"type": "CALL_OPTION", "label": "매수선택권·콜옵션", "include": false, "keywords": ["매수선택권", "콜옵션"]},
-    {"type": "TAX_DEPOSIT", "label": "납세담보 공탁", "include": false, "keywords": ["공탁", "연부연납", "납세담보"]},
-    {"type": "NON_PLEDGE", "label": "지분 거래·인수", "include": false, "keywords": ["양수도", "매매계약", "인수계약", "사채취득", "퇴임"]},
-    {"type": "CB_COLLATERAL", "label": "사채 담보", "include": false, "keywords": ["전환사채", "교환사채", "CB", "EB"]},
-    {"type": "PRIVATE_LOAN", "label": "금전소비대차", "include": true, "high_risk": true, "keywords": ["금전소비대차"]},
-    {"type": "LENDING", "label": "대차", "include": false, "keywords": ["대차", "대여"]},
-    {"type": "PLEDGE_LOAN", "label": "주담대", "include": true, "keywords": ["주식담보", "담보계약", "증권담보", "담보제공", "담보대출", "질권"]}
+    {
+      "type": "TERMINATION",
+      "label": "해지·상환",
+      "include": false,
+      "keywords": [
+        "해지",
+        "상환합의",
+        "상환 합의",
+        "삭제"
+      ]
+    },
+    {
+      "type": "CALL_OPTION",
+      "label": "매수선택권·콜옵션",
+      "include": false,
+      "keywords": [
+        "매수선택권",
+        "콜옵션"
+      ]
+    },
+    {
+      "type": "TAX_DEPOSIT",
+      "label": "납세담보 공탁",
+      "include": false,
+      "keywords": [
+        "공탁",
+        "연부연납",
+        "납세담보"
+      ],
+      "lender_keywords": [
+        "세무서",
+        "법원",
+        "세관",
+        "공탁소"
+      ]
+    },
+    {
+      "type": "NON_PLEDGE",
+      "label": "지분 거래·인수",
+      "include": false,
+      "keywords": [
+        "양수도",
+        "매매계약",
+        "인수계약",
+        "사채취득",
+        "퇴임",
+        "공동보유",
+        "공동목적보유",
+        "주주간",
+        "의결권",
+        "공동행사",
+        "공동경영",
+        "양도제한조건부",
+        "RSU",
+        "위탁계약",
+        "투자일임",
+        "일임계약",
+        "매도청구권",
+        "우선매수",
+        "보호예수",
+        "부여 계약",
+        "부여계약"
+      ],
+      "unless": [
+        "질권",
+        "주식담보",
+        "담보대출",
+        "담보계약"
+      ]
+    },
+    {
+      "type": "CB_COLLATERAL",
+      "label": "사채 담보",
+      "include": false,
+      "keywords": [
+        "전환사채",
+        "교환사채",
+        "CB",
+        "EB"
+      ]
+    },
+    {
+      "type": "PRIVATE_LOAN",
+      "label": "금전소비대차",
+      "include": true,
+      "high_risk": true,
+      "keywords": [
+        "금전소비대차"
+      ]
+    },
+    {
+      "type": "LENDING",
+      "label": "대차",
+      "include": false,
+      "keywords": [
+        "대차",
+        "대여"
+      ]
+    },
+    {
+      "type": "PLEDGE_LOAN",
+      "label": "주담대",
+      "include": true,
+      "keywords": [
+        "주식담보",
+        "담보계약",
+        "증권담보",
+        "담보제공",
+        "담보대출",
+        "질권",
+        "대출담보",
+        "담보권",
+        "담보설정",
+        "근질권",
+        "담보"
+      ]
+    }
   ],
-  "encumbrance_types": ["PLEDGE_LOAN", "PRIVATE_LOAN", "CB_COLLATERAL", "TAX_DEPOSIT", "LENDING"],
+  "encumbrance_types": [
+    "PLEDGE_LOAN",
+    "PRIVATE_LOAN",
+    "CB_COLLATERAL",
+    "TAX_DEPOSIT",
+    "LENDING"
+  ],
   "lender_types": [
-    {"type": "증권금융", "score": 0, "keywords": ["증권금융"]},
-    {"type": "저축은행", "score": 2, "keywords": ["저축은행"]},
-    {"type": "증권사", "score": 0, "keywords": ["증권", "투자증권"]},
-    {"type": "은행", "score": 0, "keywords": ["은행"]},
-    {"type": "캐피탈·여전사", "score": 2, "keywords": ["캐피탈", "카드", "파이낸셜", "리스"]},
-    {"type": "SPC·대부", "score": 3, "keywords": ["대부", "SPC", "유동화"], "patterns": ["제[0-9일이삼사오육칠팔구십]+차"]},
-    {"type": "법인·조합(사채)", "score": 3, "keywords": ["(주)", "㈜", "주식회사", "유한회사", "조합", "합자회사"]},
-    {"type": "개인(사채)", "score": 3, "patterns": ["^[가-힣]{2,4}$"]}
+    {
+      "type": "증권금융",
+      "score": 0,
+      "keywords": [
+        "증권금융"
+      ]
+    },
+    {
+      "type": "저축은행",
+      "score": 2,
+      "keywords": [
+        "저축은행"
+      ]
+    },
+    {
+      "type": "증권사",
+      "score": 0,
+      "keywords": [
+        "증권",
+        "투자증권",
+        "금융투자"
+      ]
+    },
+    {
+      "type": "은행",
+      "score": 0,
+      "keywords": [
+        "은행",
+        "뱅크",
+        "농협",
+        "수협",
+        "신협",
+        "새마을금고",
+        "SMBC",
+        "MUFG",
+        "Bank",
+        "BANK"
+      ]
+    },
+    {
+      "type": "캐피탈·여전사",
+      "score": 2,
+      "keywords": [
+        "캐피탈",
+        "카드",
+        "파이낸셜",
+        "리스",
+        "보험",
+        "생명",
+        "화재",
+        "손해"
+      ]
+    },
+    {
+      "type": "SPC·대부",
+      "score": 3,
+      "keywords": [
+        "대부",
+        "SPC",
+        "유동화"
+      ],
+      "patterns": [
+        "제[0-9일이삼사오육칠팔구십]+차"
+      ]
+    },
+    {
+      "type": "법인·조합(사채)",
+      "score": 3,
+      "keywords": [
+        "(주)",
+        "㈜",
+        "주식회사",
+        "유한회사",
+        "조합",
+        "합자회사",
+        "사모투자",
+        "투자조합",
+        "인베스트",
+        "투자금융",
+        "컨설팅",
+        "재단",
+        "LLC",
+        "LTD",
+        "Ltd",
+        "INC",
+        "Inc",
+        "L.P.",
+        "LP",
+        "S.L.",
+        "SARL",
+        "파트너스",
+        "파트너쉽",
+        "(유)",
+        "Limited",
+        "Capital",
+        "CAPITAL"
+      ]
+    },
+    {
+      "type": "개인(사채)",
+      "score": 3,
+      "patterns": [
+        "^[가-힣]{2,4}$"
+      ],
+      "keywords": [
+        "개인채권자",
+        "개인"
+      ]
+    }
   ],
-  "lender_default": {"type": "기타", "score": 2},
+  "lender_default": {
+    "type": "기타",
+    "score": 2
+  },
   "assumptions": {
     "aggregate_mode": "facility",
     "stale_report_days": 365,
@@ -30,8 +249,26 @@
     "short_rollover_days": 92
   },
   "stress_score": {
-    "maturity_days": [{"lte": 30, "score": 3}, {"lte": 90, "score": 2}],
-    "pledge_to_holding": [{"gt": 0.50, "score": 3}, {"gte": 0.30, "score": 2}],
+    "maturity_days": [
+      {
+        "lte": 30,
+        "score": 3
+      },
+      {
+        "lte": 90,
+        "score": 2
+      }
+    ],
+    "pledge_to_holding": [
+      {
+        "gt": 0.5,
+        "score": 3
+      },
+      {
+        "gte": 0.3,
+        "score": 2
+      }
+    ],
     "short_rollover": 1,
     "additional_collateral": 1
   }
