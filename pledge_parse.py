@@ -22,7 +22,7 @@ parse_document(xml_text) -> {
 import html
 import json
 import re
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -114,6 +114,46 @@ def parse_period(text):
     return dates[0], dates[-1]
 
 
+YM_RE = re.compile(r"(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*월?\s*$")
+DURATION_RE = re.compile(r"(\d+)\s*(년|개월|달|일)")
+AUTO_RENEW_RE = re.compile(r"자동\s*연장|갱신|연장\s*가능|단위로?\s*연장")
+
+
+def add_months(d, n):
+    y, m = divmod(d.month - 1 + n, 12)
+    y += d.year
+    m += 1
+    last = [31, 29 if y % 4 == 0 and (y % 100 or y % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1]
+    return date(y, m, min(d.day, last))
+
+
+def derive_maturity(text, base):
+    """절대 날짜가 없는 계약기간 -> (만기일, 사유). '1년'·'6개월'·'91일'은 base(계약 시작일 또는 계약체결일)+기간,
+    '~ 2027.07'처럼 연월만 있으면 그 달 말일. 자동연장·갱신 조건이면 만기를 정할 수 없으므로 (None, 'AUTO_RENEW')."""
+    if not text:
+        return None, None
+    if AUTO_RENEW_RE.search(text):
+        return None, "AUTO_RENEW"
+    mm = YM_RE.search(text)
+    if mm:
+        y, m = int(mm.group(1)), int(mm.group(2))
+        if 1 <= m <= 12:
+            return add_months(date(y, m, 1), 1).replace(day=1) - timedelta(days=1), "MATURITY_DERIVED"
+    parts = DURATION_RE.findall(text)
+    if parts and base:
+        months = days = 0
+        for n, u in parts:
+            n = int(n)
+            if u == "년":
+                months += 12 * n
+            elif u in ("개월", "달"):
+                months += n
+            else:
+                days += n
+        return add_months(base, months) + timedelta(days=days), "MATURITY_DERIVED"
+    return None, None
+
+
 def iso(d):
     return d.isoformat() if d else None
 
@@ -174,11 +214,20 @@ def is_blank_row(cells):
 
 # ---------------------------------------------------------------- 분류
 
-def classify_contract(kind, remark, rules=None):
+def classify_contract(kind, remark, rules=None, lender=None):
+    """계약종류·비고 문자열로 분류. 해지 행은 항상 해지로 보고(누적 변동표 상쇄용), 그 외에는 계약 상대방이
+    세무서·법원이면 문구와 관계없이 납세담보로 본다(lender_keywords). unless에 걸리는 복합 계약
+    ('주주간 계약, 근질권설정 계약')은 그 규칙을 건너뛰어 담보 계약으로 분류되게 한다."""
     rules = rules or load_rules()
     text = " ".join(t for t in (kind, remark) if t)
+    term = rules["contract_types"][0]
+    if term["type"] == "TERMINATION" and any(k in text for k in term["keywords"]):
+        return term
     for r in rules["contract_types"]:
-        if any(k in text for k in r["keywords"]):
+        if lender and any(k in lender for k in r.get("lender_keywords", [])):
+            return r
+    for r in rules["contract_types"]:
+        if any(k in text for k in r["keywords"]) and not any(k in text for k in r.get("unless", [])):
             return r
     return {"type": "OTHER", "label": "기타(검토)", "include": False}
 
@@ -189,7 +238,7 @@ def classify_provider(name, pid):
     pid = (pid or "").strip()
     if "조합" in name:
         return "PARTNERSHIP"
-    if re.search(r"유한회사|제\s*\d+\s*차|SPC", name):
+    if re.search(r"유한회사|제\s*\d+\s*차|SPC|LLC|L\.P\.|Acquisition|ACQUISITION", name):
         return "SPV"
     if BIRTH_RE.match(pid):
         return "INDIVIDUAL"
@@ -266,10 +315,14 @@ def parse_contract_rows(xml, rules):
         if is_blank_row(c):
             continue
         kind, remark = val(c, "TRD_KND"), val(c, "TRD_RMK")
-        ctype = classify_contract(kind, remark, rules)
+        lender = val(c, "TRD_RVL")
+        ctype = classify_contract(kind, remark, rules, lender)
         provider, pid = val(c, "SPC_NM"), val(c, "SPC_ID2")
         start, maturity = parse_period(val(c, "TRD_PRD"))
-        lender = val(c, "TRD_RVL")
+        contract_date = parse_ymd(unit(c, "TRD_SIN")) or parse_ymd(val(c, "TRD_SIN"))
+        mflag = None
+        if maturity is None:
+            maturity, mflag = derive_maturity(val(c, "TRD_PRD"), start or contract_date)
         rows.append({
             "seq": to_int(val(c, "SEQ_NO2")),
             "provider": provider,
@@ -284,14 +337,14 @@ def parse_contract_rows(xml, rules):
             "contract_label": ctype["label"],
             "included": bool(ctype.get("include")),
             "high_risk": bool(ctype.get("high_risk")),
-            "contract_date": iso(parse_ymd(unit(c, "TRD_SIN")) or parse_ymd(val(c, "TRD_SIN"))),
+            "contract_date": iso(contract_date),
             "start_date": iso(start),
             "maturity": iso(maturity),
             "period_raw": val(c, "TRD_PRD"),
             "ratio": to_float(val(c, "TRD_RT")),
             "remark": remark,
             "loan": None, "debtor": None, "rate": None, "maint_ratio": None, "sec_etc": None,
-            "sec_join": None, "active": True, "dup": None, "flags": [],
+            "sec_join": None, "active": True, "dup": None, "flags": [mflag] if mflag else [],
         })
     return rows, sums
 
@@ -406,6 +459,24 @@ def mark_duplicates(rows):
                         r["flags"].append("DUP_SUSPECT")
 
 
+def split_shared_loans(rows):
+    """여러 담보제공자가 하나의 대출을 공동담보로 잡은 경우 각 행에 같은 대출금액이 반복 기재된다.
+    채무자가 명시되어 있고 (대출기관, 채무자, 대출금액, 만기)가 같으며 담보제공자가 2명 이상이면 하나의 대출로 보고
+    주식 수 비율로 나눈다. 채무자 미기재('-')는 각자 본인 대출이므로 금액이 같아도 별개 대출로 둔다."""
+    groups = {}
+    for r in rows:
+        if r["active"] and r["included"] and r.get("dup") != "exact" and r["loan"] and r["shares"] and r["debtor"]:
+            key = (norm_name(r["lender"]), norm_name(r["debtor"]), r["loan"], r["maturity"])
+            groups.setdefault(key, []).append(r)
+    for g in groups.values():
+        if len(g) < 2 or len({norm_name(r["provider"]) for r in g}) < 2:
+            continue
+        loan, total = g[0]["loan"], sum(abs(r["shares"]) for r in g)
+        for r in g:
+            r["loan"] = round(loan * abs(r["shares"]) / total)
+            r["flags"].append("SHARED_FACILITY")
+
+
 def row_flags(r, rules):
     f = r["flags"]
     if r["high_risk"]:
@@ -419,7 +490,7 @@ def row_flags(r, rules):
             f.append("REVIEW")
         if r["sec_join"] is None:
             f.append("NO_LOAN_DETAIL")
-        if r["maturity"] is None:
+        if r["maturity"] is None and "AUTO_RENEW" not in f:
             f.append("NO_MATURITY")
         if r["stk_kind"] not in (None, "11"):
             f.append("NON_COMMON_STOCK")
@@ -442,6 +513,7 @@ def parse_document(xml, rules=None):
     if unmatched:
         flags.append("SEC_UNMATCHED")
     mark_duplicates(rows)
+    split_shared_loans(rows)
 
     lender_rules = rules
     for r in rows:

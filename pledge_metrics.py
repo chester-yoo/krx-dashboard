@@ -147,6 +147,9 @@ def company_metrics(docs, price, asof, rules, assumptions=None, mode=None):
     m["maturity_within_30"] = sum(1 for x in future if (date.fromisoformat(x) - ref).days <= 30)
 
     m["pledged_value"] = pledged * price if pledged and price else None  # 담보주식 시가(참고: 지분 인수 규모 가늠용)
+    if m["pledged_value"] and total_loan and total_loan > m["pledged_value"]:
+        # 대출액이 담보주식 시가보다 크면 회사·계열 전체 차입의 신용보강, 인수금융 공동담보 등일 가능성이 높다
+        flags.append("LOAN_EXCEEDS_COLLATERAL")
 
     m["latest_report_date"] = latest["report_date"]
     m["report_age_days"] = (ref - date.fromisoformat(latest["report_date"])).days if latest["report_date"] else None

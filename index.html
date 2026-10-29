@@ -1124,7 +1124,8 @@ const FLAG_INFO = {
   RATIO_MISMATCH:['비율 교차검증 차이','rv'], LEDGER_FORMAT:['누적 변동표','rv'], PARSE_FAILED:['파싱 실패','rv'], CEO_UNMATCHED:['대표 매칭 불가','rv'],
   STALE_REPORT:['정보 노후',''], MATURITY_PASSED:['만기 경과',''], SHORT_ROLLOVER:['단기 롤오버',''], ADDITIONAL_COLLATERAL:['추가담보 이력',''],
   KEP_VARIES:['유지비율 상이',''], PARTIAL_LOAN:['대출액 일부 미기재',''], NO_LOAN_DETAIL:['대출정보 없음',''], NO_MATURITY:['만기 미기재',''],
-  SEC_JOIN_FALLBACK:['대체 조인',''], NON_COMMON_STOCK:['보통주 외',''], TERMINATED:['해지',''],
+  SEC_JOIN_FALLBACK:['대체 조인',''], SHARED_FACILITY:['공동담보 대출',''], AUTO_RENEW:['자동연장',''], MATURITY_DERIVED:['만기 기간 환산',''],
+  LOAN_EXCEEDS_COLLATERAL:['대출>담보시가(신용보강·인수금융 추정)','rv'], NON_COMMON_STOCK:['보통주 외',''], TERMINATED:['해지',''],
 };
 const MEMO_STATUS = ['미검토','검토중','컨택','보류','제외'];
 const LENDER_TYPES = ['증권사','증권금융','은행','저축은행','캐피탈·여전사','SPC·대부','법인·조합(사채)','개인(사채)','기타'];
@@ -1193,7 +1194,8 @@ function pledgeCompute(c, A, S, asofIso){
   x.age = latest.report_date ? dayDiff(asofIso, latest.report_date) : null;
   x.buffer = latest.holding_rt!=null ? latest.holding_rt - A.sale : null;
 
-  const flags = new Set((c.m.flags||[]).filter(f=>!['STALE_REPORT','MATURITY_PASSED'].includes(f)));
+  const flags = new Set((c.m.flags||[]).filter(f=>!['STALE_REPORT','MATURITY_PASSED','LOAN_EXCEEDS_COLLATERAL'].includes(f)));
+  if(x.value && x.loan && x.loan > x.value) flags.add('LOAN_EXCEEDS_COLLATERAL');
   if(x.age!=null && x.age > A.stale) flags.add('STALE_REPORT');
   if(mats.length && !future.length) flags.add('MATURITY_PASSED');
   if(c.excluded && c.excluded.CB_COLLATERAL) flags.add('CB_COLLATERAL');
@@ -1230,7 +1232,7 @@ function flagBadges(set, only){
   return [...set].filter(f=>FLAG_INFO[f] && (!only || only.includes(f))).map(f=>`<span class="flag ${FLAG_INFO[f][1]}" title="${esc(f)}">${esc(FLAG_INFO[f][0])}</span>`).join('');
 }
 const TABLE_FLAGS = ['THIRD_PARTY_DEBT','HIGH_RISK_CONTRACT','PARTNERSHIP_PROVIDER','REPORTER_PARTNERSHIP','CB_COLLATERAL','PRIVATE_LENDER',
-  'STALE_REPORT','MATURITY_PASSED','DUP_SUSPECT','REVIEW_ROWS','SUM_MISMATCH','SEC_UNMATCHED','RATIO_MISMATCH','LEDGER_FORMAT'];
+  'STALE_REPORT','MATURITY_PASSED','LOAN_EXCEEDS_COLLATERAL','DUP_SUSPECT','REVIEW_ROWS','SUM_MISMATCH','SEC_UNMATCHED','RATIO_MISMATCH','LEDGER_FORMAT'];
 
 const PCOLS = [
   {key:'name', label:'회사명', get:c=>dispName(c), cell:c=>`<b>${esc(dispName(c))}</b>`, txt:true, sticky:true},
