@@ -2,7 +2,9 @@ name: Daily KRX collection
 
 on:
   schedule:
-    - cron: "0 0 * * *" # 매일 00:00 UTC = 09:00 KST
+    # 정각(특히 00:00 UTC)은 GitHub 스케줄러 혼잡으로 5~6시간씩 밀려서 혼잡이 덜한 비정각 분으로 둔다.
+    # KRX OpenAPI 전일 시세가 08:00 KST 무렵 갱신되므로 그 직후 시작 → 약 45분 뒤(08:50 KST 전후) 반영
+    - cron: "7 23 * * *" # 매일 23:07 UTC = 다음날 08:07 KST
   workflow_dispatch: {}
 
 permissions:
